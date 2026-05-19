@@ -1,0 +1,22 @@
+{
+  "name": "hft-bot",
+  "version": "1.0.0",
+  "description": "High-Frequency Trading Bot for BTC and ETH using Order Book Imbalance and Micro-price",
+  "main": "src/main.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "@types/ws": "^8.5.10",
+    "tsx": "^4.7.2",
+    "typescript": "^5.4.5"
+  }
+}

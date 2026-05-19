@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Antigravity HFT Hyperliquid Dashboard</title>
+  <!-- Google Fonts Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-dark: #08090f;
+      --panel-bg: rgba(16, 18, 35, 0.45);
+      --border-light: rgba(255, 255, 255, 0.06);
+      --neon-cyan: #00f2fe;
+      --neon-green: #00e676;
+      --neon-red: #ff1744;
+      --neon-gold: #ffd600;
+      --text-main: #f5f6fa;
+      --text-muted: #8f92a1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 50% 0%, #161a33 0%, #08090f 70%),
+        radial-gradient(circle at 0% 100%, #0d0f1a 0%, #08090f 50%);
+      background-attachment: fixed;
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 24px;
+      overflow-x: hidden;
+    }
+
+    /* Scrollbar Style */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0,0,0,0.1);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      padding: 16px 28px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-glow {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--neon-cyan);
+      box-shadow: 0 0 16px var(--neon-cyan);
+      animation: pulseGlow 2s infinite alternate;
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      background: linear-gradient(135deg, #ffffff 0%, #a5a9c2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .system-status {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 14px;
+    }
+
+    .status-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .status-label {
+      color: var(--text-muted);
+    }
+
+    .status-value {
+      font-weight: 500;
+    }
+
+    .status-value.sim {
+      color: var(--neon-cyan);
+    }
+
+    /* Heartbeat LED indicator */
+    .heartbeat-led {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #120;
+      transition: background 0.05s ease, box-shadow 0.05s ease;
+    }
+
+    .heartbeat-led.tick {
+      background: var(--neon-green);
+      box-shadow: 0 0 12px var(--neon-green);
+    }
+
+    /* Metrics Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+
+    .metric-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.4);
+    }
+
+    .metric-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--card-accent, var(--neon-cyan));
+    }
+
+    .metric-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-family: 'Inter', sans-serif;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .metric-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Specific Metrics Accents */
+    .card-net { --card-accent: var(--neon-cyan); }
+    .card-wr { --card-accent: var(--neon-gold); }
+    .card-trades { --card-accent: #9258ff; }
+    .card-duration { --card-accent: #ff8f00; }
+
+    /* Dashboard Layout Splits */
+    .dashboard-split {
+      display: grid;
+      grid-template-columns: 3fr 2fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 1024px) {
+      .dashboard-split {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Panels */
+    .panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border-light);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 12px 32px 0 rgba(0, 0, 0, 0.35);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 14px;
+    }
+
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .panel-title span {
+      background: rgba(255, 255, 255, 0.06);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      color: var(--neon-cyan);
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      text-align: left;
+    }
+
+    th {
+      color: var(--text-muted);
+      font-weight: 500;
+      padding: 12px 16px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+      font-family: 'Inter', sans-serif;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .symbol-badge {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .side-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .side-badge.buy {
+      background: rgba(0, 230, 118, 0.1);
+      color: var(--neon-green);
+      border: 1px solid rgba(0, 230, 118, 0.15);
+    }
+
+    .side-badge.sell {
+      background: rgba(255, 23, 68, 0.1);
+      color: var(--neon-red);
+      border: 1px solid rgba(255, 23, 68, 0.15);
+    }
+
+    .pnl-text {
+      font-weight: 600;
+    }
+
+    .pnl-text.positive {
+      color: var(--neon-green);
+      text-shadow: 0 0 10px rgba(0, 230, 118, 0.2);
+    }
+
+    .pnl-text.negative {
+      color: var(--neon-red);
+      text-shadow: 0 0 10px rgba(255, 23, 68, 0.2);
+    }
+
+    /* Empty States */
+    .empty-state {
+      padding: 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .empty-icon {
+      font-size: 32px;
+      opacity: 0.3;
+    }
+
+    /* Heartbeat animation for pulse */
+    @keyframes pulseGlow {
+      0% {
+        box-shadow: 0 0 8px var(--neon-cyan);
+      }
+      100% {
+        box-shadow: 0 0 20px var(--neon-cyan);
+      }
+    }
+
+    /* Heartbeat pulses for live packets */
+    @keyframes pulseHeartbeat {
+      0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(0, 242, 254, 0.4);
+      }
+      70% {
+        transform: scale(1.05);
+        box-shadow: 0 0 0 10px rgba(0, 242, 254, 0);
+      }
+      100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(0, 242, 254, 0);
+      }
+    }
+
+    .heartbeat-active {
+      animation: pulseHeartbeat 0.5s ease-out;
+    }
+
+    /* Active pos table specific styles */
+    .pos-peak {
+      color: var(--neon-green);
+      font-weight: 500;
+    }
+
+    .pos-sl {
+      color: var(--neon-red);
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- HEADER PANEL -->
+    <header id="header-bar">
+      <div class="brand-section">
+        <div class="logo-glow"></div>
+        <div>
+          <h1>ANTIGRAVITY HFT</h1>
+          <p style="font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.5px;">HYPERLIQUID ALGORITHMIC ENGINE</p>
+        </div>
+      </div>
+      
+      <div class="system-status">
+        <div class="status-item">
+          <span class="status-label">Engine Status:</span>
+          <div class="logo-glow" style="width: 8px; height: 8px; background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green);"></div>
+          <span class="status-value" style="color: var(--neon-green);">ONLINE</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Mode:</span>
+          <span class="status-value sim" id="run-mode">SIMULATION</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">WS Flow:</span>
+          <div class="heartbeat-led" id="flow-led"></div>
+          <span class="status-value" id="ticks-count">0 ticks</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- METRICS CARD ROWS -->
+    <div class="metrics-grid">
+      
+      <!-- NET PNL -->
+      <div class="metric-card card-net">
+        <div class="metric-label">Net Profit (P&L)</div>
+        <div class="metric-value pnl-text" id="metric-net-pnl">$0.0000</div>
+        <div class="metric-sub">
+          <span>Gross: <span id="metric-gross-pnl">$0.0000</span></span>
+        </div>
+      </div>
+
+      <!-- WIN RATE -->
+      <div class="metric-card card-wr">
+        <div class="metric-label">Winning Rate</div>
+        <div class="metric-value" id="metric-win-rate">0.00%</div>
+        <div class="metric-sub">
+          <span>Wins: <span id="metric-wins" style="color: var(--neon-green); font-weight: 600;">0</span></span>
+          <span>Losses: <span id="metric-losses" style="color: var(--neon-red); font-weight: 600;">0</span></span>
+        </div>
+      </div>
+
+      <!-- TOTAL TRADES -->
+      <div class="metric-card card-trades">
+        <div class="metric-label">Total Trades</div>
+        <div class="metric-value" id="metric-total-trades">0</div>
+        <div class="metric-sub">
+          <span>Taker Fees Paid: <span id="metric-fees" style="color: var(--neon-red); font-weight: 500;">$0.0000</span></span>
+        </div>
+      </div>
+
+      <!-- AVG HOLD TIME -->
+      <div class="metric-card card-duration">
+        <div class="metric-label">Avg Hold Duration</div>
+        <div class="metric-value" id="metric-avg-hold">0.00s</div>
+        <div class="metric-sub">
+          <span>TSL Protections: <span id="metric-protect-status" style="color: var(--neon-cyan); font-weight: 600;">ACTIVE</span></span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MAIN BODY GRID SPLIT -->
+    <div class="dashboard-split">
+      
+      <!-- PANEL A: ACTIVE POSITIONS (TRAILING STOP LOSS + FLOATING PNL) -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Active Positions <span>Trailing Stop Mode</span></h2>
+        </div>
+        <div style="overflow-x: auto; min-height: 150px;">
+          <table id="positions-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Entry Price</th>
+                <th>Quantity</th>
+                <th>Current Peak</th>
+                <th>Trailing Stop</th>
+                <th>Floating P&L</th>
+                <th>Hold Time</th>
+              </tr>
+            </thead>
+            <tbody id="positions-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+          <div class="empty-state" id="positions-empty">
+            <div class="empty-icon">📁</div>
+            <p>No active positions currently held.</p>
+            <p style="font-size: 12px; color: var(--text-muted);">Bot will enter dynamically when OBI & Z-Score criteria are met.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- PANEL B: RECENT SCALPS HISTORY -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Recent Finished Scalps</h2>
+        </div>
+        <div style="overflow-x: auto; min-height: 150px;">
+          <table id="scalps-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Net Profit</th>
+              </tr>
+            </thead>
+            <tbody id="scalps-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+          <div class="empty-state" id="scalps-empty">
+            <div class="empty-icon">⌛</div>
+            <p>Waiting for first scalp to execute...</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    // Connect to HFT local websocket dashboard stream
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/dashboard`;
+    
+    console.log(`Connecting to dashboard WebSocket stream: ${wsUrl}`);
+    let ws = new WebSocket(wsUrl);
+
+    const flowLed = document.getElementById('flow-led');
+    const ticksCount = document.getElementById('ticks-count');
+    const headerBar = document.getElementById('header-bar');
+
+    // Heartbeat LED flash on tick packet arrival
+    function triggerLedFlash() {
+      flowLed.classList.add('tick');
+      headerBar.classList.add('heartbeat-active');
+      
+      setTimeout(() => {
+        flowLed.classList.remove('tick');
+        headerBar.classList.remove('heartbeat-active');
+      }, 80);
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        
+        if (payload.type === 'heartbeat') {
+          triggerLedFlash();
+          ticksCount.innerText = `${payload.tickCount.toLocaleString()} ticks`;
+          return;
+        }
+
+        if (payload.type === 'dashboard_update') {
+          updateUI(payload.data);
+        }
+      } catch (err) {
+        console.error('Failed to parse WebSocket packet:', err);
+      }
+    };
+
+    ws.onopen = () => {
+      console.log('Successfully hooked into Antigravity HFT WebSocket Stream.');
+    };
+
+    ws.onclose = () => {
+      console.warn('Dashboard stream lost. Retrying connection in 3 seconds...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+    };
+
+    function formatUsd(val) {
+      const num = parseFloat(val);
+      const abs = Math.abs(num);
+      let formatted = '';
+      
+      if (abs === 0) formatted = '$0.0000';
+      else if (abs < 0.1) formatted = '$' + abs.toFixed(6);
+      else if (abs < 10) formatted = '$' + abs.toFixed(4);
+      else formatted = '$' + abs.toFixed(2);
+
+      return num < 0 ? `-$${formatted.substring(1)}` : formatted;
+    }
+
+    function getDynamicPriceDecimals(symbol, price) {
+      const sym = symbol.toUpperCase();
+      if (sym === 'BTC') return price.toFixed(0);
+      if (sym === 'ETH') return price.toFixed(1);
+      if (sym === 'SOL' || sym === 'TAO') return price.toFixed(2);
+      if (sym === 'HYPE') return price.toFixed(3);
+      return price.toFixed(4); 
+    }
+
+    function updateUI(data) {
+      // 1. Update Mode
+      document.getElementById('run-mode').innerText = data.simMode ? 'LIVE SIMULATION' : 'LIVE TRADING';
+      document.getElementById('run-mode').className = `status-value ${data.simMode ? 'sim' : ''}`;
+
+      // 2. Update Performance Metrics
+      const netPnlEl = document.getElementById('metric-net-pnl');
+      const netPnl = parseFloat(data.stats.netProfitUsd);
+      
+      netPnlEl.innerText = formatUsd(netPnl);
+      netPnlEl.className = `metric-value pnl-text ${netPnl >= 0 ? 'positive' : 'negative'}`;
+      
+      document.getElementById('metric-gross-pnl').innerText = formatUsd(data.stats.grossProfitUsd);
+      document.getElementById('metric-gross-pnl').className = data.stats.grossProfitUsd >= 0 ? 'pnl-text positive' : 'pnl-text negative';
+      
+      // Win Rate
+      const wrVal = parseFloat(data.stats.winRate);
+      const wrEl = document.getElementById('metric-win-rate');
+      wrEl.innerText = `${wrVal.toFixed(2)}%`;
+      wrEl.style.color = wrVal >= 70 ? 'var(--neon-green)' : wrVal >= 50 ? 'var(--neon-gold)' : 'var(--neon-red)';
+      
+      document.getElementById('metric-wins').innerText = data.stats.winningTrades;
+      document.getElementById('metric-losses').innerText = data.stats.losingTrades;
+      
+      // Total Trades & Fees
+      document.getElementById('metric-total-trades').innerText = data.stats.totalTrades;
+      document.getElementById('metric-fees').innerText = formatUsd(data.stats.totalFeesUsd);
+      
+      // Avg Hold Duration
+      document.getElementById('metric-avg-hold').innerText = `${parseFloat(data.stats.averageHoldTimeSec).toFixed(2)}s`;
+
+      // 3. Update Active Positions (with Floating P&L columns)
+      const posBody = document.getElementById('positions-body');
+      const posEmpty = document.getElementById('positions-empty');
+      
+      posBody.innerHTML = '';
+      
+      if (!data.activePositions || data.activePositions.length === 0) {
+        posEmpty.style.display = 'flex';
+      } else {
+        posEmpty.style.display = 'none';
+        data.activePositions.forEach(p => {
+          const sideColor = p.side === 'BUY' ? 'buy' : 'sell';
+          const holdSec = ((Date.now() - p.entryTime) / 1000).toFixed(1);
+          const peakVal = p.side === 'BUY' ? (p.highestPrice || p.entryPrice) : (p.lowestPrice || p.entryPrice);
+          
+          // Calculate floating display styles
+          const fPnlUsd = parseFloat(p.floatingPnlUsd || 0);
+          const fPnlPct = parseFloat(p.floatingPnlPct || 0) * 100;
+          const fPnlClass = fPnlUsd >= 0 ? 'positive' : 'negative';
+          const fPnlSign = fPnlUsd >= 0 ? '+' : '';
+          const fPnlText = `${fPnlSign}$${fPnlUsd.toFixed(2)} (${fPnlSign}${fPnlPct.toFixed(2)}%)`;
+
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><span class="symbol-badge">${p.symbol}</span></td>
+            <td><span class="side-badge ${sideColor}">${p.side}</span></td>
+            <td>${getDynamicPriceDecimals(p.symbol, p.entryPrice)}</td>
+            <td>${p.quantity}</td>
+            <td><span class="pos-peak">${getDynamicPriceDecimals(p.symbol, peakVal)}</span></td>
+            <td><span class="pos-sl">${getDynamicPriceDecimals(p.symbol, p.stopLossPrice)}</span></td>
+            <td><span class="pnl-text ${fPnlClass}">${fPnlText}</span></td>
+            <td>${holdSec}s</td>
+          `;
+          posBody.appendChild(row);
+        });
+      }
+
+      // 4. Update Recent finished scalps
+      const scalpsBody = document.getElementById('scalps-body');
+      const scalpsEmpty = document.getElementById('scalps-empty');
+      
+      scalpsBody.innerHTML = '';
+      
+      if (!data.tradesHistory || data.tradesHistory.length === 0) {
+        scalpsEmpty.style.display = 'flex';
+      } else {
+        scalpsEmpty.style.display = 'none';
+        
+        // Take last 8 scalps
+        const recent = [...data.tradesHistory].slice(-8).reverse();
+        recent.forEach(t => {
+          const pnlClass = t.netProfitUsd > 0 ? 'positive' : t.netProfitUsd < 0 ? 'negative' : '';
+          const sideColor = t.side === 'BUY' ? 'buy' : 'sell';
+          const exitTimeStr = new Date(t.exitTime).toLocaleTimeString();
+          
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td style="color: var(--text-muted);">${exitTimeStr}</td>
+            <td><span class="symbol-badge">${t.symbol}</span></td>
+            <td><span class="side-badge ${sideColor}">${t.side}</span></td>
+            <td><span class="pnl-text ${pnlClass}">${formatUsd(t.netProfitUsd)}</span></td>
+          `;
+          scalpsBody.appendChild(row);
+        });
+      }
+    }
+  </script>
+</body>
+</html>
