@@ -33,6 +33,7 @@ export interface Position {
   stopLossPrice: number;
   highestPrice?: number; // Tracks peak bid price for trailing stop in long positions
   lowestPrice?: number;  // Tracks trough ask price for trailing stop in short positions
+  entryReason?: string;  // Quantitative reason from StrategyManager
 }
 
 export interface TradeRecord {
@@ -49,6 +50,7 @@ export interface TradeRecord {
   feesUsd: number;
   netProfitUsd: number;
   result: 'WIN' | 'LOSS' | 'BREAKEVEN';
+  entryReason?: string; // Quantitative reason from StrategyManager
 }
 
 export interface ExecutionStats {

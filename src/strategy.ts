@@ -11,6 +11,16 @@ interface SymbolState {
 
 export class StrategyManager {
   private states: Map<string, SymbolState> = new Map();
+  private aiBiases: Record<string, 'BULLISH' | 'BEARISH' | 'NEUTRAL'> = {};
+
+  public setAiBiases(biases: Record<string, any>) {
+    this.aiBiases = {};
+    for (const [symbol, info] of Object.entries(biases)) {
+      if (info && (info as any).bias) {
+        this.aiBiases[symbol] = (info as any).bias;
+      }
+    }
+  }
 
   constructor() {
     // Initialize states for configured symbols
@@ -115,7 +125,11 @@ export class StrategyManager {
     const isOversold = zScore < -symbolConfig.zScoreThreshold;
     const hasUpwardMomentum = midPrice > state.fastEma;
 
-    if (hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
+    // Check AI Bias Lock Trend Safeguard
+    const activeBias = this.aiBiases[book.symbol] || 'NEUTRAL';
+    const isBuyAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BULLISH';
+
+    if (hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum && isBuyAllowedByAI) {
       const reason = `OBI(${obi.toFixed(2)}) > ${symbolConfig.obiThreshold} & Z(${zScore.toFixed(2)}) < -${symbolConfig.zScoreThreshold} & MicroPrice(${microPrice.toFixed(2)}) > Mid(${midPrice.toFixed(2)})`;
       return {
         symbol: book.symbol,
@@ -131,7 +145,9 @@ export class StrategyManager {
     const isOverbought = zScore > symbolConfig.zScoreThreshold;
     const hasDownwardMomentum = midPrice < state.fastEma;
 
-    if (hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
+    const isSellAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BEARISH';
+
+    if (hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum && isSellAllowedByAI) {
       const reason = `OBI(${obi.toFixed(2)}) < -${symbolConfig.obiThreshold} & Z(${zScore.toFixed(2)}) > ${symbolConfig.zScoreThreshold} & MicroPrice(${microPrice.toFixed(2)}) < Mid(${midPrice.toFixed(2)})`;
       return {
         symbol: book.symbol,

@@ -1,6 +1,8 @@
 import { CONFIG } from './config.js';
 import { Side, TradeSignal, Position, TradeRecord, ExecutionStats } from './types.js';
 import { ExchangeConnector } from './exchange.js';
+import fs from 'fs';
+import path from 'path';
 
 export class ExecutionEngine {
   private activePositions: Map<string, Position> = new Map(); // Key is symbol
@@ -21,6 +23,7 @@ export class ExecutionEngine {
 
   constructor(exchange: ExchangeConnector) {
     this.exchange = exchange;
+    this.loadTradesArchive();
   }
 
   /**
@@ -201,7 +204,8 @@ export class ExecutionEngine {
           takeProfitPrice,
           stopLossPrice,
           highestPrice: order.executedPrice, // Initialize peak bid to entry price
-          lowestPrice: order.executedPrice   // Initialize trough ask to entry price
+          lowestPrice: order.executedPrice,   // Initialize trough ask to entry price
+          entryReason: signal.reason
         };
 
         this.activePositions.set(signal.symbol, position);
@@ -214,6 +218,15 @@ export class ExecutionEngine {
         console.error(`[EXECUTION ERROR] Live entry failed:`, err.message);
       }
     }
+  }
+
+  /**
+   * Forces an active position to close immediately at a specific market price
+   */
+  public forceClosePosition(symbol: string, exitPrice: number, reason: string) {
+    const position = this.activePositions.get(symbol);
+    if (!position) return;
+    this.closePosition(position, exitPrice, reason);
   }
 
   /**
@@ -273,20 +286,21 @@ export class ExecutionEngine {
       grossProfitUsd: grossProfit,
       feesUsd: totalFeesForTrade,
       netProfitUsd: netProfit,
-      result
+      result,
+      entryReason: position.entryReason
     };
 
     this.tradesHistory.push(record);
+    this.saveTradesArchive();
     this.activePositions.delete(position.symbol);
-
-    const color = result === 'WIN' ? '\x1b[32m' : '\x1b[31m';
-    console.log(`${color}[TRADE CLOSED] ${position.symbol} | ${position.side} closed via ${reason} | Hold: ${holdTimeSec.toFixed(1)}s | Net: $${netProfit.toFixed(3)} | Result: ${result}\x1b[0m`);
+    
+    // Log complete exit details to console
+    console.log(`\n\x1b[35m[TRADE CLOSED] ${position.symbol} | ${position.side} | Net P&L: $${netProfit.toFixed(4)} (${result}) | Hold Time: ${holdTimeSec.toFixed(1)}s | Reason: ${reason}\x1b[0m\n`);
 
     this.renderDashboard();
   }
 
   /**
-   * Helper to count decimal spaces for rounding quantities
    */
   private getLotDecimalPlaces(lotSize: number): number {
     if (lotSize >= 1) return 0;
@@ -360,5 +374,64 @@ export class ExecutionEngine {
 
   public getTradesHistory() {
     return this.tradesHistory;
+  }
+
+  /**
+   * Reads trade archive database to populate historical memory on startup
+   */
+  private loadTradesArchive() {
+    try {
+      const filePath = path.join(process.cwd(), 'trades_archive.json');
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf-8');
+        this.tradesHistory = JSON.parse(data);
+        this.recalculateStats();
+        console.log(`\x1b[32m[PERSISTENT BRAIN] Hydrated ${this.tradesHistory.length} historical trades from trades_archive.json database.\x1b[0m`);
+      }
+    } catch (err: any) {
+      console.error(`[PERSISTENT BRAIN] Failed to load trades archive: ${err.message}`);
+    }
+  }
+
+  /**
+   * Syncs the current tradesHistory memory array with the local archive file
+   */
+  private saveTradesArchive() {
+    try {
+      const filePath = path.join(process.cwd(), 'trades_archive.json');
+      fs.writeFileSync(filePath, JSON.stringify(this.tradesHistory, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.error(`[PERSISTENT BRAIN] Failed to save trades archive: ${err.message}`);
+    }
+  }
+
+  /**
+   * Recalculates runtime statistics based on loaded tradesHistory records
+   */
+  private recalculateStats() {
+    if (this.tradesHistory.length === 0) return;
+    
+    let wins = 0;
+    let losses = 0;
+    let grossPnl = 0;
+    let fees = 0;
+    let holdTimeSum = 0;
+
+    for (const t of this.tradesHistory) {
+      grossPnl += t.grossProfitUsd;
+      fees += t.feesUsd;
+      holdTimeSum += t.holdTimeSec;
+      if (t.result === 'WIN') wins++;
+      else if (t.result === 'LOSS') losses++;
+    }
+
+    this.stats.totalTrades = this.tradesHistory.length;
+    this.stats.winningTrades = wins;
+    this.stats.losingTrades = losses;
+    this.stats.winRate = this.stats.totalTrades > 0 ? (wins / this.stats.totalTrades) * 100 : 0;
+    this.stats.grossProfitUsd = grossPnl;
+    this.stats.totalFeesUsd = fees;
+    this.stats.netProfitUsd = grossPnl - fees;
+    this.stats.averageHoldTimeSec = this.stats.totalTrades > 0 ? holdTimeSum / this.stats.totalTrades : 0;
   }
 }

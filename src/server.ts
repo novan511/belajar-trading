@@ -10,6 +10,9 @@ export class WebDashboardServer {
   private clients: Set<WebSocket> = new Set();
   private tickCount = 0;
   private lastUpdateData: any = null;
+  private onManualCloseCallback: ((symbol: string) => void) | null = null;
+  private onToggleStatusCallback: (() => void) | null = null;
+
 
   constructor(port: number = 3000) {
     // 1. Create standard lightweight HTTP server to serve frontend assets
@@ -60,6 +63,25 @@ export class WebDashboardServer {
         }));
       }
 
+      ws.on('message', (message: string) => {
+        try {
+          const parsed = JSON.parse(message.toString());
+          if (parsed.type === 'manual_close' && parsed.symbol) {
+            console.log(`\x1b[35m[WEB-UI] Received manual close request for ${parsed.symbol}\x1b[0m`);
+            if (this.onManualCloseCallback) {
+              this.onManualCloseCallback(parsed.symbol);
+            }
+          } else if (parsed.type === 'toggle_system_status') {
+            console.log(`\x1b[35m[WEB-UI] Received system ON/OFF status toggle request\x1b[0m`);
+            if (this.onToggleStatusCallback) {
+              this.onToggleStatusCallback();
+            }
+          }
+        } catch (err: any) {
+          console.error('[WEB-UI] Error parsing WebSocket message:', err.message);
+        }
+      });
+
       ws.on('close', () => {
         this.clients.delete(ws);
       });
@@ -99,7 +121,9 @@ export class WebDashboardServer {
       simMode: CONFIG.SIMULATION_MODE,
       stats: engineData.stats,
       activePositions: engineData.activePositions,
-      tradesHistory: engineData.tradesHistory
+      tradesHistory: engineData.tradesHistory,
+      aiInsights: engineData.aiInsights || {},
+      isTradingActive: engineData.isTradingActive
     };
 
     const payload = JSON.stringify({
@@ -119,6 +143,17 @@ export class WebDashboardServer {
         client.send(payload);
       }
     }
+  }
+
+  /**
+   * Registers a callback to execute when a browser manual close position request is received
+   */
+  public registerManualCloseCallback(callback: (symbol: string) => void) {
+    this.onManualCloseCallback = callback;
+  }
+
+  public registerToggleStatusCallback(callback: () => void) {
+    this.onToggleStatusCallback = callback;
   }
 
   /**

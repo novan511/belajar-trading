@@ -5,6 +5,8 @@ import { StrategyManager } from './strategy.js';
 import { ExecutionEngine } from './execution.js';
 import { WebDashboardServer } from './server.js';
 import { CONFIG } from './config.js';
+import { NvidiaObserver } from './nvidia.js';
+
 
 // Setup file debug logging to bypass console.clear() wiping diagnostic history
 const logFilePath = path.join(process.cwd(), 'hft_debug.log');
@@ -35,15 +37,45 @@ async function main() {
   const exchange = new ExchangeConnector();
   const strategy = new StrategyManager();
   const execution = new ExecutionEngine(exchange);
+  const nvidiaObserver = new NvidiaObserver();
+
   
   // 2. Start the Premium Real-time HTML Dashboard server on port 3000
   const dashboardServer = new WebDashboardServer(3000);
+
+  // Load system active status from persistent file system_state.json
+  let isTradingActive = true;
+  const stateFilePath = path.join(process.cwd(), 'system_state.json');
+  try {
+    if (fs.existsSync(stateFilePath)) {
+      const stateData = fs.readFileSync(stateFilePath, 'utf-8');
+      const parsedState = JSON.parse(stateData);
+      isTradingActive = parsedState.isTradingActive !== false;
+      logDebug(`[SYSTEM STATE] Hydrated isTradingActive = ${isTradingActive} from system_state.json`);
+    }
+  } catch (err: any) {
+    logDebug(`[SYSTEM STATE] Error reading state file: ${err.message}`);
+  }
+
+  // Register dashboard status toggle WebSocket callback
+  dashboardServer.registerToggleStatusCallback(() => {
+    isTradingActive = !isTradingActive;
+    logDebug(`[SYSTEM STATE] Toggle request received. isTradingActive is now: ${isTradingActive}`);
+    try {
+      fs.writeFileSync(stateFilePath, JSON.stringify({ isTradingActive }, null, 2), 'utf-8');
+    } catch (err: any) {
+      logDebug(`[SYSTEM STATE] Error writing state file: ${err.message}`);
+    }
+    // Instantly push update to refresh UI
+    sendDashboardUpdate();
+  });
 
   let tickCount = 0;
   const symbolTickCounts: Record<string, number> = {};
   
   // Keep track of the last known price packets for active safeguard evaluations
   const lastKnownPrices: Record<string, { bid: number; ask: number }> = {};
+  let latestAiInsights: Record<string, any> = {};
 
   // Helper to send real-time states to browser dashboard
   const sendDashboardUpdate = () => {
@@ -72,9 +104,33 @@ async function main() {
     dashboardServer.broadcastUpdate({
       stats: execution.getStats(),
       activePositions: mappedPositions,
-      tradesHistory: execution.getTradesHistory()
+      tradesHistory: execution.getTradesHistory(),
+      aiInsights: latestAiInsights,
+      isTradingActive
     });
   };
+
+  // 2b. Listen to browser manual position close signals
+  dashboardServer.registerManualCloseCallback((symbol) => {
+    logDebug(`[MANUAL CLOSE] Browser requested close for ${symbol}`);
+    const activePositions = execution.getActivePositions();
+    const position = activePositions.find(p => p.symbol === symbol);
+    if (!position) {
+      logDebug(`[MANUAL CLOSE] Failed: No active position in ${symbol}`);
+      return;
+    }
+
+    const lastPrice = lastKnownPrices[symbol];
+    const exitPrice = lastPrice 
+      ? (position.side === 'BUY' ? lastPrice.bid : lastPrice.ask) 
+      : position.entryPrice;
+
+    execution.forceClosePosition(symbol, exitPrice, 'MANUAL CLOSE FROM DASHBOARD');
+    logDebug(`[MANUAL CLOSE] Position ${symbol} closed at market price ${exitPrice}`);
+    
+    // Instantly push update to refresh UI
+    sendDashboardUpdate();
+  });
 
   // 3. Set up live WebSocket order book updates
   exchange.onBookUpdate((book) => {
@@ -103,6 +159,12 @@ async function main() {
       
       // C. If an entry signal is generated, execute it immediately
       if (signal) {
+        if (!isTradingActive) {
+          if (tickCount % 200 === 0) {
+            logDebug(`[SYSTEM STATE] Signal generated for ${signal.symbol} but ignored because HFT system is PAUSED.`);
+          }
+          return;
+        }
         logDebug(`[SIGNAL GENERATED] ${signal.symbol} | ${signal.side} | Price: ${signal.price} | Reason: ${signal.reason}`);
         execution.executeSignal(signal).then(() => {
           // Immediately update browser UI upon entry execution
@@ -153,10 +215,59 @@ async function main() {
     console.log('\x1b[35m================================================================================\x1b[0m');
   }, 1000);
 
+  // 5b. Dynamic AI Parameter Optimizer Loop (Every 3 minutes)
+  const runParameterOptimization = async () => {
+    logDebug('Triggering dynamic AI parameter optimization with NVIDIA Llama 3.1 8B...');
+    const activeSymbols = Object.keys(CONFIG.SYMBOLS);
+    const optimized = await nvidiaObserver.optimizeParameters(
+      execution.getStats(),
+      execution.getTradesHistory(),
+      activeSymbols
+    );
+
+    if (optimized && optimized.parameters) {
+      logDebug(`[AI OPTIMIZER] Received parameters shift from Llama: ${JSON.stringify(optimized.parameters)}`);
+      
+      // Save the latest analytical thoughts of the AI
+      latestAiInsights = optimized.analysis || {};
+      strategy.setAiBiases(latestAiInsights);
+
+      for (const [symbol, params] of Object.entries(optimized.parameters)) {
+        const symbolConfig = (CONFIG.SYMBOLS as any)[symbol];
+        if (symbolConfig) {
+          symbolConfig.obiThreshold = params.obiThreshold;
+          symbolConfig.zScoreThreshold = params.zScoreThreshold;
+          symbolConfig.takeProfitPct = params.takeProfitPct;
+          symbolConfig.stopLossPct = params.stopLossPct;
+          logDebug(`[AI OPTIMIZER] Applied updated params for ${symbol}: OBI=${params.obiThreshold}, Z=${params.zScoreThreshold}, TP=${(params.takeProfitPct*100).toFixed(2)}%, SL=${(params.stopLossPct*100).toFixed(2)}%`);
+        }
+      }
+      console.log('\n\x1b[32m[AI OPTIMIZER] Meta Llama 3.1 8B successfully optimized all parameters and updated market insights!\x1b[0m');
+      
+      // Instantly push update to refresh UI with AI reasons
+      sendDashboardUpdate();
+    } else {
+      logDebug('[AI OPTIMIZER] No optimization returned (fallback to default parameters).');
+    }
+  };
+
+  const aiOptimizationInterval = setInterval(runParameterOptimization, 180000);
+  
+  // Warm start AI check: trigger the first optimization after 10 seconds of active trade monitoring
+  const warmStartTimeout = setTimeout(() => {
+    runParameterOptimization().catch(err => {
+      logDebug(`Error during warm-start AI optimization: ${err.message}`);
+    });
+  }, 10000);
+
+
   // 6. Handle Graceful Shutdown
   const shutdown = () => {
     clearInterval(dashboardInterval);
+    clearInterval(aiOptimizationInterval);
+    clearTimeout(warmStartTimeout);
     dashboardServer.close();
+
     logDebug('Shutdown signal received. Finalizing log.');
     console.log('\n\x1b[33m[SYSTEM] Shutdown signal received. Cleaning up resources...\x1b[0m');
     console.log('\x1b[36m================================================================================\x1b[0m');

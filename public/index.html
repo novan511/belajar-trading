@@ -213,12 +213,20 @@
       display: grid;
       grid-template-columns: 3fr 2fr;
       gap: 20px;
+      min-width: 0;
     }
 
     @media (max-width: 1024px) {
       .dashboard-split {
         grid-template-columns: 1fr;
       }
+    }
+
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      min-height: 150px;
     }
 
     /* Panels */
@@ -232,6 +240,7 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
+      min-width: 0;
     }
 
     .panel-header {
@@ -385,7 +394,290 @@
       color: var(--neon-red);
       font-weight: 500;
     }
+
+    /* AI Thinking Hub CSS */
+    .ai-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .ai-card:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: rgba(118, 185, 0, 0.3);
+      box-shadow: 0 8px 32px rgba(118, 185, 0, 0.08);
+      transform: translateY(-2px);
+    }
+    .ai-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .ai-coin {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 16px;
+      color: #fff;
+    }
+    .ai-bias {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .ai-bias.bullish {
+      background: rgba(0, 230, 118, 0.15);
+      color: #00e676;
+      border: 1px solid rgba(0, 230, 118, 0.25);
+    }
+    .ai-bias.bearish {
+      background: rgba(255, 23, 68, 0.15);
+      color: #ff1744;
+      border: 1px solid rgba(255, 23, 68, 0.25);
+    }
+    .ai-bias.neutral {
+      background: rgba(255, 196, 0, 0.15);
+      color: #ffc400;
+      border: 1px solid rgba(255, 196, 0, 0.25);
+    }
+    .ai-confidence-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .ai-confidence-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .ai-confidence-bar {
+      height: 6px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .ai-confidence-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #76b900, #00e676);
+      border-radius: 3px;
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .ai-rationale {
+      font-size: 12px;
+      line-height: 1.5;
+      color: rgba(255, 255, 255, 0.8);
+      font-style: italic;
+    }
+
+
+    .close-btn {
+      background: rgba(255, 23, 68, 0.12);
+      color: #ff5252;
+      border: 1px solid rgba(255, 23, 68, 0.25);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .close-btn:hover {
+      background: rgba(255, 23, 68, 0.25);
+      border-color: #ff1744;
+      box-shadow: 0 0 8px rgba(255, 23, 68, 0.25);
+    }
+
+    .close-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Premium Glassmorphic Toggle Switch CSS */
+    .switch-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-left: 15px;
+      padding: 5px 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 20px;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .switch-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--neon-green);
+      user-select: none;
+      transition: color 0.3s ease;
+    }
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 20px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(255, 255, 255, 0.08);
+      transition: .3s ease;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: rgba(255, 255, 255, 0.8);
+      transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: rgba(0, 230, 118, 0.15);
+      border-color: rgba(0, 230, 118, 0.35);
+    }
+    input:checked + .slider:before {
+      transform: translateX(18px);
+      background-color: var(--neon-green);
+      box-shadow: 0 0 8px var(--neon-green);
+    }
+
+    /* ==========================================
+       Premium Mobile Responsiveness Rules
+       ========================================== */
+    @media (max-width: 768px) {
+      .container {
+        padding: 12px;
+        gap: 16px;
+      }
+
+      /* Stack header bars elegantly */
+      header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+        padding: 16px 20px;
+        text-align: center;
+      }
+
+      .brand-section {
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .system-status {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .status-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 12px;
+      }
+
+      .switch-container {
+        margin-left: 0;
+        justify-content: space-between;
+        padding: 8px 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 12px;
+        box-shadow: none;
+      }
+
+      /* Responsive metrics grids (2 columns on mobile instead of inline auto-fit) */
+      .metrics-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px;
+      }
+
+      .metric-card {
+        padding: 14px;
+        border-radius: 12px;
+      }
+
+      .metric-value {
+        font-size: 20px !important;
+      }
+
+      .metric-sub {
+        font-size: 10px !important;
+      }
+
+      /* Stack panels vertically */
+      .dashboard-split {
+        grid-template-columns: 1fr !important;
+        gap: 16px;
+      }
+
+      .panel {
+        padding: 16px;
+        border-radius: 16px;
+      }
+
+      /* AI Observer Cards: single column layout on phones */
+      .ai-observer-grid {
+        grid-template-columns: 1fr !important;
+        gap: 10px !important;
+      }
+
+      .ai-card {
+        padding: 14px !important;
+        border-radius: 14px !important;
+      }
+
+      /* Force tables to remain wide enough and allow horizontal swipe scroll */
+      table {
+        min-width: 580px;
+      }
+
+      th, td {
+        padding: 10px 8px !important;
+        font-size: 11px !important;
+      }
+
+      h1 {
+        font-size: 18px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      /* Stack metrics grid to single-column on extremely small viewports */
+      .metrics-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
   </style>
+
 </head>
 <body>
   <div class="container">
@@ -414,6 +706,13 @@
           <span class="status-label">WS Flow:</span>
           <div class="heartbeat-led" id="flow-led"></div>
           <span class="status-value" id="ticks-count">0 ticks</span>
+        </div>
+        <div class="switch-container">
+          <span class="switch-label" id="system-status-text">SYSTEM ACTIVE</span>
+          <label class="switch">
+            <input type="checkbox" id="system-toggle-checkbox" checked>
+            <span class="slider"></span>
+          </label>
         </div>
       </div>
     </header>
@@ -468,7 +767,7 @@
         <div class="panel-header">
           <h2 class="panel-title">Active Positions <span>Trailing Stop Mode</span></h2>
         </div>
-        <div style="overflow-x: auto; min-height: 150px;">
+        <div class="table-wrapper">
           <table id="positions-table">
             <thead>
               <tr>
@@ -480,6 +779,8 @@
                 <th>Trailing Stop</th>
                 <th>Floating P&L</th>
                 <th>Hold Time</th>
+                <th>AI Trade Reason</th>
+                <th style="text-align: center;">Action</th>
               </tr>
             </thead>
             <tbody id="positions-body">
@@ -499,7 +800,7 @@
         <div class="panel-header">
           <h2 class="panel-title">Recent Finished Scalps</h2>
         </div>
-        <div style="overflow-x: auto; min-height: 150px;">
+        <div class="table-wrapper">
           <table id="scalps-table">
             <thead>
               <tr>
@@ -522,6 +823,23 @@
 
     </div>
 
+    <!-- PANEL C: NVIDIA NIM AI OBSERVER THINKING HUB (FULL WIDTH) -->
+    <div class="panel" style="margin-top: 20px;">
+      <div class="panel-header">
+        <h2 class="panel-title">NVIDIA NIM AI Observer Thinking Hub <span style="background: rgba(118, 185, 0, 0.15); color: #76b900; border: 1px solid rgba(118, 185, 0, 0.3);">Llama 3.1 8B Active</span></h2>
+      </div>
+      <div style="min-height: 100px; padding: 5px 0;">
+        <div id="ai-insights-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
+          <!-- Dynamically populated cards representing AI observations for each coin -->
+        </div>
+        <div class="empty-state" id="ai-insights-empty">
+          <div class="empty-icon">🧠</div>
+          <p>NVIDIA Observer is evaluating session telemetry...</p>
+          <p style="font-size: 12px; color: var(--text-muted);">AI runs parameter optimizations and sends market intelligence updates every 3 minutes (10s warm-start).</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -535,6 +853,22 @@
     const flowLed = document.getElementById('flow-led');
     const ticksCount = document.getElementById('ticks-count');
     const headerBar = document.getElementById('header-bar');
+    const toggleCheckbox = document.getElementById('system-toggle-checkbox');
+    const systemStatusText = document.getElementById('system-status-text');
+
+    if (toggleCheckbox) {
+      toggleCheckbox.addEventListener('change', () => {
+        sendToggleSystemStatus();
+      });
+    }
+
+    function sendToggleSystemStatus() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'toggle_system_status'
+        }));
+      }
+    }
 
     // Heartbeat LED flash on tick packet arrival
     function triggerLedFlash() {
@@ -576,6 +910,17 @@
       }, 3000);
     };
 
+    function sendManualClose(symbol) {
+      if (confirm(`Apakah Anda yakin ingin menutup manual posisi ${symbol}?`)) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'manual_close',
+            symbol: symbol
+          }));
+        }
+      }
+    }
+
     function formatUsd(val) {
       const num = parseFloat(val);
       const abs = Math.abs(num);
@@ -599,6 +944,20 @@
     }
 
     function updateUI(data) {
+      // Update system active toggle
+      if (toggleCheckbox) {
+        toggleCheckbox.checked = data.isTradingActive;
+      }
+      if (systemStatusText) {
+        if (data.isTradingActive) {
+          systemStatusText.innerText = 'SYSTEM ACTIVE';
+          systemStatusText.style.color = 'var(--neon-green)';
+        } else {
+          systemStatusText.innerText = 'SYSTEM PAUSED';
+          systemStatusText.style.color = 'var(--neon-red)';
+        }
+      }
+
       // 1. Update Mode
       document.getElementById('run-mode').innerText = data.simMode ? 'LIVE SIMULATION' : 'LIVE TRADING';
       document.getElementById('run-mode').className = `status-value ${data.simMode ? 'sim' : ''}`;
@@ -661,6 +1020,10 @@
             <td><span class="pos-sl">${getDynamicPriceDecimals(p.symbol, p.stopLossPrice)}</span></td>
             <td><span class="pnl-text ${fPnlClass}">${fPnlText}</span></td>
             <td>${holdSec}s</td>
+            <td><code style="color: var(--neon-cyan); font-size: 11px; font-family: 'Space Mono', monospace;">${p.entryReason || 'No details'}</code></td>
+            <td style="text-align: center;">
+              <button class="close-btn" onclick="sendManualClose('${p.symbol}')">Force Close</button>
+            </td>
           `;
           posBody.appendChild(row);
         });
@@ -692,6 +1055,43 @@
             <td><span class="pnl-text ${pnlClass}">${formatUsd(t.netProfitUsd)}</span></td>
           `;
           scalpsBody.appendChild(row);
+        });
+      }
+
+      // 5. Update NVIDIA AI Observer Insights Hub
+      const aiContainer = document.getElementById('ai-insights-container');
+      const aiEmpty = document.getElementById('ai-insights-empty');
+      
+      aiContainer.innerHTML = '';
+      
+      if (!data.aiInsights || Object.keys(data.aiInsights).length === 0) {
+        aiEmpty.style.display = 'flex';
+      } else {
+        aiEmpty.style.display = 'none';
+        
+        Object.entries(data.aiInsights).forEach(([symbol, insight]) => {
+          const biasClass = insight.bias.toLowerCase();
+          
+          const card = document.createElement('div');
+          card.className = 'ai-card';
+          card.innerHTML = `
+            <div class="ai-header">
+              <span class="ai-coin">${symbol}</span>
+              <span class="ai-bias ${biasClass}">${insight.bias}</span>
+            </div>
+            
+            <div class="ai-confidence-container">
+              <span class="ai-confidence-label">Confidence: ${insight.confidence}%</span>
+              <div class="ai-confidence-bar">
+                <div class="ai-confidence-fill" style="width: ${insight.confidence}%;"></div>
+              </div>
+            </div>
+            
+            <div class="ai-rationale">
+              "${insight.rationale}"
+            </div>
+          `;
+          aiContainer.appendChild(card);
         });
       }
     }
