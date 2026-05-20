@@ -146,6 +146,62 @@ export class ExchangeConnector {
   }
 
   /**
+   * Fetch historical candles from Hyperliquid REST API
+   */
+  public async getCandleSnapshot(coin: string, interval: string, limit = 10): Promise<any[]> {
+    const url = `${CONFIG.HYPERLIQUID_REST_URL}/info`;
+    const now = Date.now();
+    let intervalMs = 60 * 1000;
+    if (interval === '5m') intervalMs = 5 * 60 * 1000;
+    else if (interval === '15m') intervalMs = 15 * 60 * 1000;
+    else if (interval === '30m') intervalMs = 30 * 60 * 1000;
+    else if (interval === '1h') intervalMs = 60 * 60 * 1000;
+    else if (interval === '4h') intervalMs = 4 * 60 * 60 * 1000;
+    else if (interval === '1d') intervalMs = 24 * 60 * 60 * 1000;
+    else if (interval === '1w') intervalMs = 7 * 24 * 60 * 60 * 1000;
+    else if (interval === '1M') intervalMs = 30 * 24 * 60 * 60 * 1000;
+
+    const startTime = now - (limit * 2) * intervalMs;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'candleSnapshot',
+          req: {
+            coin,
+            interval,
+            startTime,
+            endTime: now
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`REST API error: ${response.status} ${response.statusText}`);
+      }
+
+      const candles = (await response.json()) as any[];
+      if (!Array.isArray(candles)) return [];
+
+      return candles.slice(-limit).map(c => ({
+        time: c.t,
+        open: parseFloat(c.o),
+        high: parseFloat(c.h),
+        low: parseFloat(c.l),
+        close: parseFloat(c.c),
+        volume: parseFloat(c.v)
+      }));
+    } catch (err: any) {
+      console.error(`[EXCHANGE] Failed to fetch candles for ${coin} (${interval}): ${err.message}`);
+      return [];
+    }
+  }
+
+  /**
    * Production Hyperliquid Order Execution placeholder.
    * In Hyperliquid, executing live trades requires:
    * 1. Setting up an Ethereum wallet with the wallet private key.

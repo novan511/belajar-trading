@@ -1,0 +1,19 @@
+[
+  {
+    "id": "hl-QX1DUY9Q1",
+    "symbol": "MANTA",
+    "side": "SELL",
+    "entryPrice": 0.07861,
+    "exitPrice": 0.0787,
+    "quantity": 3816,
+    "entryTime": 1779274339518,
+    "exitTime": 1779274460497,
+    "holdTimeSec": 120.979,
+    "grossProfitUsd": -0.3434400000000257,
+    "feesUsd": 0.060029496,
+    "netProfitUsd": -0.40346949600002574,
+    "result": "LOSS",
+    "entryReason": "OBI(-0.68) < -0.35 & Z(1.27) > 0.90 & MicroPrice(0.08) < Mid(0.08)",
+    "modelId": "Gemini_Pro"
+  }
+]

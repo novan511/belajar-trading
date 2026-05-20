@@ -20,6 +20,7 @@ export interface TradeSignal {
   side: Side;
   price: number;
   reason: string;
+  confidence: 'HIGH' | 'LOW'; // Added confidence level for dynamic sizing
 }
 
 export interface Position {
@@ -34,6 +35,8 @@ export interface Position {
   highestPrice?: number; // Tracks peak bid price for trailing stop in long positions
   lowestPrice?: number;  // Tracks trough ask price for trailing stop in short positions
   entryReason?: string;  // Quantitative reason from StrategyManager
+  isTakeProfitTriggered?: boolean; // Tracks whether position hit its original TP target and is in runaway profit mode
+  modelId?: string;      // Identifies which model owns this position
 }
 
 export interface TradeRecord {
@@ -51,6 +54,7 @@ export interface TradeRecord {
   netProfitUsd: number;
   result: 'WIN' | 'LOSS' | 'BREAKEVEN';
   entryReason?: string; // Quantitative reason from StrategyManager
+  modelId?: string;     // Identifies which model owns this trade record
 }
 
 export interface ExecutionStats {

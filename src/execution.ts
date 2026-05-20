@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 
 export class ExecutionEngine {
-  private activePositions: Map<string, Position> = new Map(); // Key is symbol
+  private activePositions: Map<string, Position[]> = new Map(); // Key is symbol, value is array of positions
   private tradesHistory: TradeRecord[] = [];
   private exchange: ExchangeConnector;
 
@@ -21,7 +21,10 @@ export class ExecutionEngine {
     averageHoldTimeSec: 0
   };
 
-  constructor(exchange: ExchangeConnector) {
+  private modelId: string;
+
+  constructor(modelId: string, exchange: ExchangeConnector) {
+    this.modelId = modelId;
     this.exchange = exchange;
     this.loadTradesArchive();
   }
@@ -43,119 +46,175 @@ export class ExecutionEngine {
    * Evaluates active positions to recalculate Trailing Stop Loss levels
    */
   public evaluatePositions(symbol: string, currentBid: number, currentAsk: number) {
-    const position = this.activePositions.get(symbol);
-    if (!position) return;
+    const positions = this.activePositions.get(symbol);
+    if (!positions || positions.length === 0) return;
 
     const now = Date.now();
-    const holdTimeSec = (now - position.entryTime) / 1000;
-    
-    let shouldClose = false;
-    let exitPrice = 0;
-    let reason = '';
-
     const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === symbol);
     if (!coinConfig) return;
 
     const roundtripFeePct = CONFIG.TAKER_FEE_PCT * 2; // 0.06% roundtrip fee
 
-    if (position.side === 'BUY') {
-      // LONG: exit by selling at current Bid
-      exitPrice = currentBid;
-      const profitPct = (exitPrice - position.entryPrice) / position.entryPrice;
+    // Evaluate each position individually in a shallow copy to prevent concurrent modification issues during close
+    for (const position of [...positions]) {
+      const holdTimeSec = (now - position.entryTime) / 1000;
+      let shouldClose = false;
+      let exitPrice = 0;
+      let reason = '';
 
-      // Dynamic Trailing Stop Tightening: hug price tighter as it nears profit target
-      let activeStopLossPct = coinConfig.stopLossPct;
-      if (profitPct >= coinConfig.takeProfitPct * 0.4) {
-        activeStopLossPct = coinConfig.stopLossPct * 0.4; // Tighten SL by 60% once 40% of TP is reached!
-      }
+      if (position.side === 'BUY') {
+        // LONG: exit by selling at current Bid
+        exitPrice = currentBid;
+        const profitPct = (exitPrice - position.entryPrice) / position.entryPrice;
 
-      // Initialize or update peak bid price
-      const peakPrice = position.highestPrice || position.entryPrice;
-      if (currentBid > peakPrice) {
-        position.highestPrice = currentBid;
-        // Drag Stop Loss upward behind the price peak
-        const newStopLoss = currentBid * (1 - activeStopLossPct);
+        // Check if price hits or exceeds original Take Profit target to trigger Runaway Profit mode
+        if (exitPrice >= position.takeProfitPrice) {
+          if (!position.isTakeProfitTriggered) {
+            position.isTakeProfitTriggered = true;
+            console.log(`\n\x1b[32m[RUNAWAY PROFIT MODE ACTIVATED] ${position.symbol} has breached Take Profit target (+${(profitPct * 100).toFixed(2)}%). Uncapping profit potential with progressive tight trailing stop.\x1b[0m\n`);
+          }
+        }
+
+        // Progressive Trailing Stop Tightening: tighter SL as profit climbs
+        let activeStopLossPct = coinConfig.stopLossPct;
+        if (profitPct > 0) {
+          const profitRatio = profitPct / coinConfig.takeProfitPct;
+          if (profitRatio >= 1.0 || position.isTakeProfitTriggered) {
+            // Runaway profit mode: trails extremely tight behind peak price
+            activeStopLossPct = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+          } else {
+            // Smoothly interpolate from original SL to tight runaway SL
+            const tightSl = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+            activeStopLossPct = coinConfig.stopLossPct - (coinConfig.stopLossPct - tightSl) * profitRatio;
+          }
+        }
+
+        // Update peak price
+        const peakPrice = position.highestPrice || position.entryPrice;
+        if (currentBid > peakPrice) {
+          position.highestPrice = currentBid;
+        }
+
+        // Drag stop loss behind peak price
+        const currentPeak = position.highestPrice || currentBid;
+        const newStopLoss = currentPeak * (1 - activeStopLossPct);
         if (newStopLoss > position.stopLossPrice) {
           position.stopLossPrice = newStopLoss;
         }
-      }
 
-      // STOP LOSS + : Force SL to cross above entry price + roundtrip fee to lock in a free trade!
-      const feePlusStopLoss = position.entryPrice * (1 + roundtripFeePct);
-      if (currentBid >= feePlusStopLoss && position.stopLossPrice < feePlusStopLoss) {
-        position.stopLossPrice = feePlusStopLoss;
-        console.log(`\x1b[32m[STOP LOSS + ACTIVATED] ${position.symbol} SL moved to fee-breakeven floor (${this.formatPrice(position.symbol, feePlusStopLoss)})\x1b[0m`);
-      }
+        // STOP LOSS + : Force SL to cross above entry price + roundtrip fee to lock in a free trade!
+        const feePlusStopLoss = position.entryPrice * (1 + roundtripFeePct);
+        const activationBuffer = position.entryPrice * (1 + roundtripFeePct + 0.001); // 0.1% buffer
+        if (currentBid >= activationBuffer && position.stopLossPrice < feePlusStopLoss) {
+          position.stopLossPrice = feePlusStopLoss;
+          console.log(`\x1b[32m[STOP LOSS + ACTIVATED] ${position.symbol} SL moved to fee-breakeven floor (${this.formatPrice(position.symbol, feePlusStopLoss)})\x1b[0m`);
+        }
 
-      // A. Check if price hit or exceeded the Hard Take Profit target
-      if (exitPrice >= position.takeProfitPrice) {
-        shouldClose = true;
-        reason = `TAKE PROFIT TARGET HIT (+${(profitPct * 100).toFixed(3)}%)`;
-      }
-      // B. Check if price fell below trailing stop level
-      else if (exitPrice <= position.stopLossPrice) {
-        shouldClose = true;
-        const isWin = exitPrice > position.entryPrice * (1 + roundtripFeePct);
-        reason = isWin 
-          ? `TRAILING PROFIT LOCKED (+${(profitPct * 100).toFixed(3)}%)` 
-          : `STOP LOSS TRIGGERED (${(profitPct * 100).toFixed(3)}%)`;
-      }
-      // C. Check if max hold time expired
-      else if (holdTimeSec >= CONFIG.MAX_HOLD_DURATION_SEC) {
-        shouldClose = true;
-        reason = `MAX TIME EXPIRED (${holdTimeSec.toFixed(1)}s)`;
-      }
-    } else {
-      // SHORT: exit by buying back at current Ask
-      exitPrice = currentAsk;
-      const profitPct = (position.entryPrice - exitPrice) / position.entryPrice;
+        // Close conditions: Trailing stop loss breached or hold duration expired
+        if (exitPrice <= position.stopLossPrice) {
+          shouldClose = true;
+          const isWin = exitPrice > position.entryPrice * (1 + roundtripFeePct);
+          reason = isWin 
+            ? `TRAILING PROFIT LOCKED (+${(profitPct * 100).toFixed(3)}%)` 
+            : `STOP LOSS TRIGGERED (${(profitPct * 100).toFixed(3)}%)`;
+        } else if (holdTimeSec >= CONFIG.MAX_HOLD_DURATION_SEC) {
+          shouldClose = true;
+          reason = `MAX TIME EXPIRED (${holdTimeSec.toFixed(1)}s)`;
+        }
+      } else {
+        // SHORT: exit by buying back at current Ask
+        exitPrice = currentAsk;
+        const profitPct = (position.entryPrice - exitPrice) / position.entryPrice;
 
-      // Dynamic Trailing Stop Tightening: hug price tighter as it drops
-      let activeStopLossPct = coinConfig.stopLossPct;
-      if (profitPct >= coinConfig.takeProfitPct * 0.4) {
-        activeStopLossPct = coinConfig.stopLossPct * 0.4; // Tighten SL by 60% once 40% of TP is reached!
-      }
+        // Check if price hits or drops below original Take Profit target to trigger Runaway Profit mode
+        if (exitPrice <= position.takeProfitPrice) {
+          if (!position.isTakeProfitTriggered) {
+            position.isTakeProfitTriggered = true;
+            console.log(`\n\x1b[32m[RUNAWAY PROFIT MODE ACTIVATED] ${position.symbol} has breached Take Profit target (+${(profitPct * 100).toFixed(2)}%). Uncapping profit potential with progressive tight trailing stop.\x1b[0m\n`);
+          }
+        }
 
-      // Initialize or update trough ask price
-      const troughPrice = position.lowestPrice || position.entryPrice;
-      if (currentAsk < troughPrice) {
-        position.lowestPrice = currentAsk;
-        // Drag Stop Loss downward behind the price drop
-        const newStopLoss = currentAsk * (1 + activeStopLossPct);
+        // Progressive Trailing Stop Tightening: tighter SL as profit drops
+        let activeStopLossPct = coinConfig.stopLossPct;
+        if (profitPct > 0) {
+          const profitRatio = profitPct / coinConfig.takeProfitPct;
+          if (profitRatio >= 1.0 || position.isTakeProfitTriggered) {
+            activeStopLossPct = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+          } else {
+            const tightSl = coinConfig.stopLossPct * CONFIG.RUNAWAY_TRAILING_SL_MULTIPLIER;
+            activeStopLossPct = coinConfig.stopLossPct - (coinConfig.stopLossPct - tightSl) * profitRatio;
+          }
+        }
+
+        // Update trough price
+        const troughPrice = position.lowestPrice || position.entryPrice;
+        if (currentAsk < troughPrice) {
+          position.lowestPrice = currentAsk;
+        }
+
+        // Drag stop loss behind trough price
+        const currentTrough = position.lowestPrice || currentAsk;
+        const newStopLoss = currentTrough * (1 + activeStopLossPct);
         if (newStopLoss < position.stopLossPrice) {
           position.stopLossPrice = newStopLoss;
         }
+
+        // STOP LOSS + : Force SL to cross below entry price - roundtrip fee to lock in a free trade!
+        const feePlusStopLoss = position.entryPrice * (1 - roundtripFeePct);
+        const activationBuffer = position.entryPrice * (1 - roundtripFeePct - 0.001); // 0.1% buffer
+        if (currentAsk <= activationBuffer && position.stopLossPrice > feePlusStopLoss) {
+          position.stopLossPrice = feePlusStopLoss;
+          console.log(`\x1b[32m[STOP LOSS + ACTIVATED] ${position.symbol} SL moved to fee-breakeven floor (${this.formatPrice(position.symbol, feePlusStopLoss)})\x1b[0m`);
+        }
+
+        // Close conditions: Trailing stop loss breached or hold duration expired
+        if (exitPrice >= position.stopLossPrice) {
+          shouldClose = true;
+          const isWin = exitPrice < position.entryPrice * (1 - roundtripFeePct);
+          reason = isWin 
+            ? `TRAILING PROFIT LOCKED (+${(profitPct * 100).toFixed(3)}%)` 
+            : `STOP LOSS TRIGGERED (${(profitPct * 100).toFixed(3)}%)`;
+        } else if (holdTimeSec >= CONFIG.MAX_HOLD_DURATION_SEC) {
+          shouldClose = true;
+          reason = `MAX TIME EXPIRED (${holdTimeSec.toFixed(1)}s)`;
+        }
       }
 
-      // STOP LOSS + : Force SL to cross below entry price - roundtrip fee to lock in a free trade!
-      const feePlusStopLoss = position.entryPrice * (1 - roundtripFeePct);
-      if (currentAsk <= feePlusStopLoss && position.stopLossPrice > feePlusStopLoss) {
-        position.stopLossPrice = feePlusStopLoss;
-        console.log(`\x1b[32m[STOP LOSS + ACTIVATED] ${position.symbol} SL moved to fee-breakeven floor (${this.formatPrice(position.symbol, feePlusStopLoss)})\x1b[0m`);
-      }
-
-      // A. Check if price hit or fell below the Hard Take Profit target
-      if (exitPrice <= position.takeProfitPrice) {
-        shouldClose = true;
-        reason = `TAKE PROFIT TARGET HIT (+${(profitPct * 100).toFixed(3)}%)`;
-      }
-      // B. Check if price rose above trailing stop level
-      else if (exitPrice >= position.stopLossPrice) {
-        shouldClose = true;
-        const isWin = exitPrice < position.entryPrice * (1 - roundtripFeePct);
-        reason = isWin 
-          ? `TRAILING PROFIT LOCKED (+${(profitPct * 100).toFixed(3)}%)` 
-          : `STOP LOSS TRIGGERED (${(profitPct * 100).toFixed(3)}%)`;
-      }
-      // C. Check if max hold time expired
-      else if (holdTimeSec >= CONFIG.MAX_HOLD_DURATION_SEC) {
-        shouldClose = true;
-        reason = `MAX TIME EXPIRED (${holdTimeSec.toFixed(1)}s)`;
+      if (shouldClose) {
+        this.closePosition(position, exitPrice, reason);
       }
     }
 
-    if (shouldClose) {
-      this.closePosition(position, exitPrice, reason);
+    // Proactive Cumulative Drawdown Protection check
+    const updatedPositions = this.activePositions.get(symbol);
+    if (updatedPositions && updatedPositions.length > 0) {
+      let totalCost = 0;
+      let totalFloatingPnl = 0;
+
+      for (const p of updatedPositions) {
+        const cost = p.entryPrice * p.quantity;
+        totalCost += cost;
+        
+        let fPnl = 0;
+        if (p.side === 'BUY') {
+          fPnl = (currentBid - p.entryPrice) * p.quantity;
+        } else {
+          fPnl = (p.entryPrice - currentAsk) * p.quantity;
+        }
+        totalFloatingPnl += fPnl;
+      }
+
+      const cumulativeDrawdownPct = totalCost > 0 ? (totalFloatingPnl / totalCost) : 0;
+      
+      if (cumulativeDrawdownPct <= -CONFIG.CUMULATIVE_DRAWDOWN_LIMIT_PCT) {
+        console.log(`\n\x1b[31m[CUMULATIVE DRAWDOWN SAFEGUARD TRIGGERED] ${symbol} drawdown of ${(cumulativeDrawdownPct * 100).toFixed(2)}% exceeded limit of -${(CONFIG.CUMULATIVE_DRAWDOWN_LIMIT_PCT * 100).toFixed(2)}%. Closing all active positions.\x1b[0m\n`);
+        
+        // Close all positions at current market prices
+        for (const pos of [...updatedPositions]) {
+          const finalExitPrice = pos.side === 'BUY' ? currentBid : currentAsk;
+          this.closePosition(pos, finalExitPrice, `CUMULATIVE DRAWDOWN SAFEGUARD TRIGGERED (${(cumulativeDrawdownPct * 100).toFixed(2)}%)`);
+        }
+      }
     }
   }
 
@@ -163,17 +222,33 @@ export class ExecutionEngine {
    * Triggers entry for a new signal
    */
   public async executeSignal(signal: TradeSignal) {
-    // Skip if we already have an active position in this symbol
-    if (this.activePositions.has(signal.symbol)) {
-      return;
-    }
-
     const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === signal.symbol);
     if (!coinConfig) return;
 
-    const tradeSize = coinConfig.tradeSizeUsd;
-    const entryPrice = signal.price;
-    const quantity = parseFloat((tradeSize / entryPrice).toFixed(this.getLotDecimalPlaces(coinConfig.lotSize)));
+    // Evaluate spacing & time cooldown rules for existing positions on this coin
+    const activeForCoin = this.activePositions.get(signal.symbol) || [];
+    if (activeForCoin.length > 0) {
+      // 1. Time Cooldown check (minimum spacing of 15 seconds)
+      const lastPos = activeForCoin[activeForCoin.length - 1];
+      if (Date.now() - lastPos.entryTime < CONFIG.ENTRY_COOLDOWN_SEC * 1000) {
+        return; // Skip signal inside cooldown
+      }
+
+      // 2. Price Spacing check (minimum spacing of 0.5% from all current active position entry prices)
+      const currentEntryPrice = signal.price;
+      for (const p of activeForCoin) {
+        const priceDiffPct = Math.abs(currentEntryPrice - p.entryPrice) / p.entryPrice;
+        if (priceDiffPct < CONFIG.MIN_ENTRY_SPACING_PCT) {
+          return; // Skip signal too close to existing entry price
+        }
+      }
+    }
+
+      // Determine trade size based on confidence level
+      const baseSize = coinConfig.tradeSizeUsd;
+      const tradeSize = signal.confidence === 'LOW' ? baseSize * 0.3 : baseSize;
+      const entryPrice = signal.price;
+      const quantity = parseFloat((tradeSize / entryPrice).toFixed(this.getLotDecimalPlaces(coinConfig.lotSize)));
 
     if (quantity <= 0) return;
 
@@ -205,10 +280,14 @@ export class ExecutionEngine {
           stopLossPrice,
           highestPrice: order.executedPrice, // Initialize peak bid to entry price
           lowestPrice: order.executedPrice,   // Initialize trough ask to entry price
-          entryReason: signal.reason
+          entryReason: signal.reason,
+          modelId: this.modelId
         };
 
-        this.activePositions.set(signal.symbol, position);
+        const existingList = this.activePositions.get(signal.symbol) || [];
+        existingList.push(position);
+        this.activePositions.set(signal.symbol, existingList);
+
         this.stats.totalFeesUsd += order.feeUsd; // Add entry fee
       }
     } else {
@@ -221,12 +300,16 @@ export class ExecutionEngine {
   }
 
   /**
-   * Forces an active position to close immediately at a specific market price
+   * Forces all active positions of a symbol to close immediately at a specific market price
    */
   public forceClosePosition(symbol: string, exitPrice: number, reason: string) {
-    const position = this.activePositions.get(symbol);
-    if (!position) return;
-    this.closePosition(position, exitPrice, reason);
+    const positions = this.activePositions.get(symbol);
+    if (!positions || positions.length === 0) return;
+    
+    // Close all positions for this symbol
+    for (const pos of [...positions]) {
+      this.closePosition(pos, exitPrice, reason);
+    }
   }
 
   /**
@@ -287,12 +370,21 @@ export class ExecutionEngine {
       feesUsd: totalFeesForTrade,
       netProfitUsd: netProfit,
       result,
-      entryReason: position.entryReason
+      entryReason: position.entryReason,
+      modelId: this.modelId
     };
 
     this.tradesHistory.push(record);
     this.saveTradesArchive();
-    this.activePositions.delete(position.symbol);
+    
+    // Remove individual position from array in Map
+    const existingList = this.activePositions.get(position.symbol) || [];
+    const updatedList = existingList.filter(p => p.id !== position.id);
+    if (updatedList.length === 0) {
+      this.activePositions.delete(position.symbol);
+    } else {
+      this.activePositions.set(position.symbol, updatedList);
+    }
     
     // Log complete exit details to console
     console.log(`\n\x1b[35m[TRADE CLOSED] ${position.symbol} | ${position.side} | Net P&L: $${netProfit.toFixed(4)} (${result}) | Hold Time: ${holdTimeSec.toFixed(1)}s | Reason: ${reason}\x1b[0m\n`);
@@ -313,7 +405,7 @@ export class ExecutionEngine {
    * Sleek, high-frequency real-time dashboard printed to console
    */
   public renderDashboard() {
-    console.clear();
+    // console.clear(); // Disabled clear to prevent terminal flickering in multi-model parallel run
     console.log('\x1b[35m================================================================================\x1b[0m');
     console.log('\x1b[1m\x1b[33m                   HIGH-FREQUENCY TRADING (HFT) DASHBOARD                      \x1b[0m');
     console.log(`\x1b[37m Running Mode   : ${CONFIG.SIMULATION_MODE ? 'LIVE SIMULATION (Safe)' : 'LIVE TRADING (Real API)'}\x1b[0m`);
@@ -339,12 +431,15 @@ export class ExecutionEngine {
     if (this.activePositions.size === 0) {
       console.log('   No active positions currently held.');
     } else {
-      for (const [symbol, pos] of this.activePositions) {
-        const sideColor = pos.side === 'BUY' ? '\x1b[32m' : '\x1b[31m';
-        const holdTimeSec = ((Date.now() - pos.entryTime) / 1000).toFixed(1);
-        const peakPrice = pos.side === 'BUY' ? (pos.highestPrice || pos.entryPrice) : (pos.lowestPrice || pos.entryPrice);
-        
-        console.log(`   Symbol: \x1b[1m${symbol}\x1b[0m | Side: ${sideColor}${pos.side}\x1b[0m | Entry: ${this.formatPrice(symbol, pos.entryPrice)} | SL: \x1b[31m${this.formatPrice(symbol, pos.stopLossPrice)}\x1b[0m | Peak: \x1b[32m${this.formatPrice(symbol, peakPrice)}\x1b[0m | Hold: ${holdTimeSec}s`);
+      for (const [symbol, positions] of this.activePositions) {
+        for (const pos of positions) {
+          const sideColor = pos.side === 'BUY' ? '\x1b[32m' : '\x1b[31m';
+          const holdTimeSec = ((Date.now() - pos.entryTime) / 1000).toFixed(1);
+          const peakPrice = pos.side === 'BUY' ? (pos.highestPrice || pos.entryPrice) : (pos.lowestPrice || pos.entryPrice);
+          const runawayText = pos.isTakeProfitTriggered ? ' [RUNAWAY]' : '';
+          
+          console.log(`   Symbol: \x1b[1m${symbol}\x1b[0m | Side: ${sideColor}${pos.side}\x1b[0m | Entry: ${this.formatPrice(symbol, pos.entryPrice)} | SL: \x1b[31m${this.formatPrice(symbol, pos.stopLossPrice)}\x1b[0m | Peak: \x1b[32m${this.formatPrice(symbol, peakPrice)}\x1b[0m | Hold: ${holdTimeSec}s${runawayText}`);
+        }
       }
     }
     console.log('\x1b[35m================================================================================\x1b[0m');
@@ -369,7 +464,11 @@ export class ExecutionEngine {
   }
 
   public getActivePositions() {
-    return Array.from(this.activePositions.values());
+    const list: Position[] = [];
+    for (const positions of this.activePositions.values()) {
+      list.push(...positions);
+    }
+    return list;
   }
 
   public getTradesHistory() {
@@ -381,15 +480,15 @@ export class ExecutionEngine {
    */
   private loadTradesArchive() {
     try {
-      const filePath = path.join(process.cwd(), 'trades_archive.json');
+      const filePath = path.join(process.cwd(), `trades_archive_${this.modelId}.json`);
       if (fs.existsSync(filePath)) {
         const data = fs.readFileSync(filePath, 'utf-8');
         this.tradesHistory = JSON.parse(data);
         this.recalculateStats();
-        console.log(`\x1b[32m[PERSISTENT BRAIN] Hydrated ${this.tradesHistory.length} historical trades from trades_archive.json database.\x1b[0m`);
+        console.log(`\x1b[32m[PERSISTENT BRAIN] Hydrated ${this.tradesHistory.length} historical trades from trades_archive_${this.modelId}.json database.\x1b[0m`);
       }
     } catch (err: any) {
-      console.error(`[PERSISTENT BRAIN] Failed to load trades archive: ${err.message}`);
+      console.error(`[PERSISTENT BRAIN] Failed to load trades archive for ${this.modelId}: ${err.message}`);
     }
   }
 
@@ -398,10 +497,10 @@ export class ExecutionEngine {
    */
   private saveTradesArchive() {
     try {
-      const filePath = path.join(process.cwd(), 'trades_archive.json');
+      const filePath = path.join(process.cwd(), `trades_archive_${this.modelId}.json`);
       fs.writeFileSync(filePath, JSON.stringify(this.tradesHistory, null, 2), 'utf-8');
     } catch (err: any) {
-      console.error(`[PERSISTENT BRAIN] Failed to save trades archive: ${err.message}`);
+      console.error(`[PERSISTENT BRAIN] Failed to save trades archive for ${this.modelId}: ${err.message}`);
     }
   }
 

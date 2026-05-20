@@ -37,7 +37,10 @@ export class NvidiaObserver {
   public async optimizeParameters(
     stats: ExecutionStats,
     recentTrades: TradeRecord[],
-    activeSymbols: string[]
+    activeSymbols: string[],
+    candleData: Record<string, Record<string, any[]>>,
+    modelOverride?: string,
+    currentParamsSnapshot?: Record<string, any>
   ): Promise<NvidiaObserverResponse | null> {
     if (!this.apiKey) return null;
 
@@ -52,33 +55,45 @@ export class NvidiaObserver {
       holdTimeSec: Math.round(t.holdTimeSec)
     }));
 
-    // Build current parameters snapshot to give LLM a reference point
-    const currentParamsSnapshot: Record<string, any> = {};
-    for (const symbol of activeSymbols) {
-      const symConf = (CONFIG.SYMBOLS as any)[symbol];
-      if (symConf) {
-        currentParamsSnapshot[symbol] = {
-          obiThreshold: symConf.obiThreshold,
-          zScoreThreshold: symConf.zScoreThreshold,
-          takeProfitPct: symConf.takeProfitPct,
-          stopLossPct: symConf.stopLossPct
-        };
+    // Build current parameters snapshot to give LLM a reference point if not provided
+    const paramsSnapshot = currentParamsSnapshot || {};
+    if (!currentParamsSnapshot) {
+      for (const symbol of activeSymbols) {
+        const symConf = (CONFIG.SYMBOLS as any)[symbol];
+        if (symConf) {
+          paramsSnapshot[symbol] = {
+            obiThreshold: symConf.obiThreshold,
+            zScoreThreshold: symConf.zScoreThreshold,
+            takeProfitPct: symConf.takeProfitPct,
+            stopLossPct: symConf.stopLossPct
+          };
+        }
       }
     }
 
     const systemPrompt = `You are a quantitative strategist AI Observer for an in-memory sub-second high-frequency trading (HFT) bot.
-Your role is to analyze trading session results, determine market bias/tension per coin, and optimize parameters dynamically for the next trading window.
+Your role is to analyze multi-timeframe candlestick data (5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M), analyze trading session results, determine the macro-to-micro market bias per coin, and optimize parameters dynamically for the next trading window.
+
+MULTI-TIMEFRAME ANALYSIS MANDATE (TOP-DOWN ANALYSIS):
+Analyze the provided multiTimeframeCandles for each coin across:
+- Macro Trend: Monthly (1M), Weekly (1w), and Daily (1d). Is the coin in a long-term bull market or bear market?
+- Medium Trend: 4-Hour (4h), 1-Hour (1h), and 30-Minute (30m). What is the intermediate swing structure?
+- Micro Trend: 15-Minute (15m) and 5-Minute (5m). What is the immediate direction?
+
+You must synthesize these timeframes:
+- If Macro (1M, 1w, 1d), Medium (4h, 1h, 30m), and Micro (15m, 5m) are strongly bullish, lock the bias as "BULLISH".
+- If they are strongly bearish, lock the bias as "BEARISH".
+- If they are conflicting or flat, set the bias to "NEUTRAL".
+
+RISK MANAGEMENT & TIGHTENING RULE:
+1. Fee Protection: Taker fees eat up HFT profits. If win rate is low, or to generally protect capital, widen the entry thresholds (obiThreshold, zScoreThreshold) to make the HFT executor highly selective (trade only at key levels, reducing trade count and saving transaction fees).
+2. Tight Stop Loss: To prevent a few bad trades from erasing many small wins, you MUST enforce a tight stopLossPct relative to takeProfitPct. Keep stopLossPct at 0.4x to 0.6x of takeProfitPct (e.g. if takeProfitPct is 0.0100 (1.0%), stopLossPct must be between 0.0040 (0.4%) and 0.0060 (0.6%)). NEVER allow stopLossPct to exceed 0.7x of takeProfitPct.
 
 PARAMETER REFERENCE:
-1. obiThreshold: [0.10 to 0.40] - Imbalance sensitivity. Higher means more selective entry.
-2. zScoreThreshold: [0.5 to 1.8] - Mean-reversion trigger depth. Higher means waiting for a deeper market pullback before entry.
+1. obiThreshold: [0.12 to 0.40] - Imbalance sensitivity. Higher means more selective entry.
+2. zScoreThreshold: [0.6 to 1.8] - Mean-reversion trigger depth. Higher means waiting for a deeper market pullback before entry.
 3. takeProfitPct: [0.0020 to 0.0200] (0.20% to 2.0%) - Hard profit target.
-4. stopLossPct: [0.0015 to 0.0150] (0.15% to 1.5%) - Absolute stop loss. Usually set at 0.5x to 0.8x of takeProfitPct.
-
-STRATEGY ADJUSTMENT RATIONALE:
-- If a symbol has a high win rate (>70%) and positive net USD, keep parameters stable or slightly widen takeProfitPct to ride larger swings.
-- If a symbol has a low win rate (<50%) or negative P&L, it is likely executing mean-reversion entries in a strong trending market (causes stop losses). Widen thresholds (increase obiThreshold by +0.02 to +0.05, increase zScoreThreshold by +0.1 to +0.3) to make entries highly selective, and widen stopLossPct/takeProfitPct slightly to bypass short-term noise.
-- ALWAYS optimize parameters dynamically for each symbol in the request.
+4. stopLossPct: [0.0010 to 0.0120] (0.10% to 1.20%) - Stop loss. MUST be 0.4x to 0.6x of takeProfitPct.
 
 OUTPUT FORMAT:
 Return ONLY a valid, raw JSON object matching the exact schema below. Do not output markdown code fences, do not write explanations outside JSON, do not add text before or after the JSON.
@@ -92,7 +107,7 @@ REQUIRED JSON SCHEMA:
     "SYMBOL": { 
       "bias": "BULLISH" | "BEARISH" | "NEUTRAL", 
       "confidence": number, 
-      "rationale": "Provide a concise 1-2 sentence quantitative reason in INDONESIAN explaining the parameters adjustment based on recent trades or lack thereof." 
+      "rationale": "Provide a very concise quantitative rationale in INDONESIAN explaining the trend (e.g., 'Tren bulanan s.d. 5m BULLISH kuat, parameter disesuaikan'). Keep it under 15 words." 
     }
   }
 }
@@ -100,12 +115,10 @@ REQUIRED JSON SCHEMA:
 Example Response:
 {
   "parameters": {
-    "BTC": { "obiThreshold": 0.22, "zScoreThreshold": 0.85, "takeProfitPct": 0.0045, "stopLossPct": 0.0035 },
-    "ETH": { "obiThreshold": 0.25, "zScoreThreshold": 0.90, "takeProfitPct": 0.0050, "stopLossPct": 0.0040 }
+    "BTC": { "obiThreshold": 0.22, "zScoreThreshold": 0.85, "takeProfitPct": 0.0045, "stopLossPct": 0.0025 }
   },
   "analysis": {
-    "BTC": { "bias": "BULLISH", "confidence": 85, "rationale": "Performa trading BTC sangat kuat dengan win rate tinggi. Parameter dijaga ketat dengan sedikit memperlebar takeProfit untuk mengoptimalkan profit run." },
-    "ETH": { "bias": "BEARISH", "confidence": 65, "rationale": "Mengalami kerugian beruntun akibat tren turun yang kuat. Meningkatkan ambang batas OBI dan Z-Score agar kriteria entri menjadi jauh lebih selektif." }
+    "BTC": { "bias": "BULLISH", "confidence": 85, "rationale": "Tren makro mingguan dan harian BULLISH kuat, sementara tren mikro menunjukkan koreksi jangka pendek. Mengunci bias BULLISH dan merapatkan SL ke 0.55x dari TP untuk mempertahankan rasio R:R yang optimal." }
   }
 }`;
 
@@ -131,6 +144,32 @@ Example Response:
       }
     }
 
+    const summarizedCandles: Record<string, Record<string, { close: number; changePct: string; trend: string }>> = {};
+    for (const [symbol, timeframesData] of Object.entries(candleData)) {
+      summarizedCandles[symbol] = {};
+      for (const [tf, candles] of Object.entries(timeframesData)) {
+        if (!candles || candles.length === 0) {
+          summarizedCandles[symbol][tf] = { close: 0, changePct: '0.00%', trend: 'NEUTRAL' };
+          continue;
+        }
+        const latestCandle = candles[candles.length - 1];
+        const oldestCandle = candles[0];
+        const latestClose = latestCandle.close;
+        const oldestOpen = oldestCandle.open;
+        
+        const changePct = oldestOpen !== 0 ? ((latestClose - oldestOpen) / oldestOpen) * 100 : 0;
+        let trend = 'NEUTRAL';
+        if (changePct > 0.05) trend = 'BULLISH';
+        else if (changePct < -0.05) trend = 'BEARISH';
+        
+        summarizedCandles[symbol][tf] = {
+          close: parseFloat(latestClose.toFixed(4)),
+          changePct: `${changePct.toFixed(2)}%`,
+          trend
+        };
+      }
+    }
+
     const userPrompt = {
       allTimeStats: {
         totalTrades: stats.totalTrades,
@@ -140,10 +179,11 @@ Example Response:
         netProfitUsd: parseFloat(stats.netProfitUsd.toFixed(4)),
         totalFeesUsd: parseFloat(stats.totalFeesUsd.toFixed(4))
       },
-      currentParameters: currentParamsSnapshot,
+      currentParameters: paramsSnapshot,
       allTimePerformancePerCoin: longTermStatsPerSymbol,
       recentTradesMicroContext: subsetTrades, // last 15 trades
-      symbolsToOptimize: activeSymbols
+      symbolsToOptimize: activeSymbols,
+      multiTimeframeCandles: summarizedCandles // Summarized trend data for each symbol
     };
 
     try {
@@ -155,12 +195,12 @@ Example Response:
           'Accept': 'application/json'
         },
         body: JSON.stringify({
-          model: this.model,
+          model: modelOverride || this.model,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: JSON.stringify(userPrompt, null, 2) }
           ],
-          max_tokens: 1800, // Slightly expanded to accommodate rationales
+          max_tokens: 4096, // Expanded to accommodate full multi-symbol payload without truncation
           temperature: 0.2
         }),
         signal: AbortSignal.timeout(35000)

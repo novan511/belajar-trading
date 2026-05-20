@@ -6,6 +6,7 @@ import { ExecutionEngine } from './execution.js';
 import { WebDashboardServer } from './server.js';
 import { CONFIG } from './config.js';
 import { NvidiaObserver } from './nvidia.js';
+import { GeminiObserver } from './gemini.js';
 
 
 // Setup file debug logging to bypass console.clear() wiping diagnostic history
@@ -31,17 +32,27 @@ process.on('unhandledRejection', (reason: any) => {
 });
 
 async function main() {
-  logDebug('Initializing High-Frequency Trading Bot...');
+  logDebug('Initializing Multi-Model HFT Bot...');
 
   // 1. Initialize core system components
   const exchange = new ExchangeConnector();
-  const strategy = new StrategyManager();
-  const execution = new ExecutionEngine(exchange);
   const nvidiaObserver = new NvidiaObserver();
+const geminiObserver = new GeminiObserver();
 
+  // Create strategy manager and execution engine instances for each configured model
+  const models: Record<string, { strategy: StrategyManager; execution: ExecutionEngine }> = {};
+  const latestAiInsights: Record<string, any> = {};
+
+  for (const modelId of Object.keys(CONFIG.MODELS)) {
+    models[modelId] = {
+      strategy: new StrategyManager(),
+      execution: new ExecutionEngine(modelId, exchange)
+    };
+    latestAiInsights[modelId] = {};
+  }
   
   // 2. Start the Premium Real-time HTML Dashboard server on port 3000
-  const dashboardServer = new WebDashboardServer(3000);
+  const dashboardServer = new WebDashboardServer(10001);
 
   // Load system active status from persistent file system_state.json
   let isTradingActive = true;
@@ -57,6 +68,49 @@ async function main() {
     logDebug(`[SYSTEM STATE] Error reading state file: ${err.message}`);
   }
 
+  // Helper to send real-time states to browser dashboard
+  const lastKnownPrices: Record<string, { bid: number; ask: number }> = {};
+
+  const sendDashboardUpdate = () => {
+    const payload: Record<string, any> = {};
+
+    for (const [modelId, model] of Object.entries(models)) {
+      const mappedPositions = model.execution.getActivePositions().map(p => {
+        const lastPrice = lastKnownPrices[p.symbol];
+        const currentPrice = lastPrice ? (p.side === 'BUY' ? lastPrice.bid : lastPrice.ask) : p.entryPrice;
+        
+        let floatingPnlPct = 0;
+        let floatingPnlUsd = 0;
+        
+        if (p.side === 'BUY') {
+          floatingPnlPct = (currentPrice - p.entryPrice) / p.entryPrice;
+          floatingPnlUsd = (currentPrice - p.entryPrice) * p.quantity;
+        } else {
+          floatingPnlPct = (p.entryPrice - currentPrice) / p.entryPrice;
+          floatingPnlUsd = (p.entryPrice - currentPrice) * p.quantity;
+        }
+
+        return {
+          ...p,
+          floatingPnlPct,
+          floatingPnlUsd
+        };
+      });
+
+      payload[modelId] = {
+        stats: model.execution.getStats(),
+        activePositions: mappedPositions,
+        tradesHistory: model.execution.getTradesHistory(),
+        aiInsights: latestAiInsights[modelId] || {}
+      };
+    }
+
+    dashboardServer.broadcastUpdate({
+      models: payload,
+      isTradingActive
+    });
+  };
+
   // Register dashboard status toggle WebSocket callback
   dashboardServer.registerToggleStatusCallback(() => {
     isTradingActive = !isTradingActive;
@@ -70,53 +124,19 @@ async function main() {
     sendDashboardUpdate();
   });
 
-  let tickCount = 0;
-  const symbolTickCounts: Record<string, number> = {};
-  
-  // Keep track of the last known price packets for active safeguard evaluations
-  const lastKnownPrices: Record<string, { bid: number; ask: number }> = {};
-  let latestAiInsights: Record<string, any> = {};
-
-  // Helper to send real-time states to browser dashboard
-  const sendDashboardUpdate = () => {
-    const mappedPositions = execution.getActivePositions().map(p => {
-      const lastPrice = lastKnownPrices[p.symbol];
-      const currentPrice = lastPrice ? (p.side === 'BUY' ? lastPrice.bid : lastPrice.ask) : p.entryPrice;
-      
-      let floatingPnlPct = 0;
-      let floatingPnlUsd = 0;
-      
-      if (p.side === 'BUY') {
-        floatingPnlPct = (currentPrice - p.entryPrice) / p.entryPrice;
-        floatingPnlUsd = (currentPrice - p.entryPrice) * p.quantity;
-      } else {
-        floatingPnlPct = (p.entryPrice - currentPrice) / p.entryPrice;
-        floatingPnlUsd = (p.entryPrice - currentPrice) * p.quantity;
-      }
-
-      return {
-        ...p,
-        floatingPnlPct,
-        floatingPnlUsd
-      };
-    });
-
-    dashboardServer.broadcastUpdate({
-      stats: execution.getStats(),
-      activePositions: mappedPositions,
-      tradesHistory: execution.getTradesHistory(),
-      aiInsights: latestAiInsights,
-      isTradingActive
-    });
-  };
-
   // 2b. Listen to browser manual position close signals
-  dashboardServer.registerManualCloseCallback((symbol) => {
-    logDebug(`[MANUAL CLOSE] Browser requested close for ${symbol}`);
-    const activePositions = execution.getActivePositions();
+  dashboardServer.registerManualCloseCallback((modelId, symbol) => {
+    logDebug(`[MANUAL CLOSE] Browser requested close for model ${modelId} symbol ${symbol}`);
+    const model = models[modelId];
+    if (!model) {
+      logDebug(`[MANUAL CLOSE] Failed: Model ${modelId} not found.`);
+      return;
+    }
+
+    const activePositions = model.execution.getActivePositions();
     const position = activePositions.find(p => p.symbol === symbol);
     if (!position) {
-      logDebug(`[MANUAL CLOSE] Failed: No active position in ${symbol}`);
+      logDebug(`[MANUAL CLOSE] Failed: No active position for model ${modelId} in ${symbol}`);
       return;
     }
 
@@ -125,12 +145,18 @@ async function main() {
       ? (position.side === 'BUY' ? lastPrice.bid : lastPrice.ask) 
       : position.entryPrice;
 
-    execution.forceClosePosition(symbol, exitPrice, 'MANUAL CLOSE FROM DASHBOARD');
-    logDebug(`[MANUAL CLOSE] Position ${symbol} closed at market price ${exitPrice}`);
+    model.execution.forceClosePosition(symbol, exitPrice, 'MANUAL CLOSE FROM DASHBOARD');
+    logDebug(`[MANUAL CLOSE] Model ${modelId} Position ${symbol} closed at market price ${exitPrice}`);
     
     // Instantly push update to refresh UI
     sendDashboardUpdate();
   });
+
+  let tickCount = 0;
+  const symbolTickCounts: Record<string, number> = {};
+  
+  // Global BTC EMA tracking for macro trend
+  const btcMacroState: { ema: number | null; lastUpdate: number } = { ema: null, lastUpdate: 0 };
 
   // 3. Set up live WebSocket order book updates
   exchange.onBookUpdate((book) => {
@@ -140,39 +166,62 @@ async function main() {
     // Flash the live browser LED indicator
     dashboardServer.broadcastTick();
 
-    // Cache the latest bid and ask prices for this symbol
     const bestBid = book.bids[0][0];
     const bestAsk = book.asks[0][0];
+
+    // Update BTC macro trend EMA globally
+    if (book.symbol === 'BTC') {
+      const midPrice = (bestBid + bestAsk) / 2;
+      const emaPeriod = CONFIG.EMA_FAST_PERIOD;
+      const k = 2 / (emaPeriod + 1);
+      if (btcMacroState.ema === null) {
+        btcMacroState.ema = midPrice;
+      } else {
+        btcMacroState.ema = midPrice * k + btcMacroState.ema * (1 - k);
+      }
+      const trend = midPrice > btcMacroState.ema ? 'BULLISH' : midPrice < btcMacroState.ema ? 'BEARISH' : 'NEUTRAL';
+      
+      // Update macro trends for all models
+      for (const model of Object.values(models)) {
+        model.strategy.setMacroTrends({ BTC: trend });
+      }
+      
+      if (tickCount % 500 === 0) {
+        logDebug(`[MACRO TREND] BTC ${trend} (mid=${midPrice.toFixed(2)} ema=${btcMacroState.ema.toFixed(2)})`);
+      }
+    }
+
+    // Cache the latest bid and ask prices for this symbol
     lastKnownPrices[book.symbol] = { bid: bestBid, ask: bestAsk };
 
     // Log the first few ticks to confirm ingestion is fully working
-    if (tickCount <= 10 || tickCount % 500 === 0) {
+    if (tickCount <= 10 || tickCount % 1000 === 0) {
       logDebug(`WS Packet Ingested #${tickCount} | Symbol: ${book.symbol} | Bid: ${bestBid} | Ask: ${bestAsk}`);
     }
 
-    // A. Evaluate active position exits on tick level (real-time risk management)
-    execution.evaluatePositions(book.symbol, bestBid, bestAsk);
+    // Process tick for all models
+    for (const [modelId, model] of Object.entries(models)) {
+      try {
+        // A. Evaluate active position exits on tick level (real-time risk management)
+        model.execution.evaluatePositions(book.symbol, bestBid, bestAsk);
 
-    // B. Process tick in quantitative strategy to check for entry signals
-    try {
-      const signal = strategy.processTick(book);
-      
-      // C. If an entry signal is generated, execute it immediately
-      if (signal) {
-        if (!isTradingActive) {
-          if (tickCount % 200 === 0) {
-            logDebug(`[SYSTEM STATE] Signal generated for ${signal.symbol} but ignored because HFT system is PAUSED.`);
+        // B. Process tick in quantitative strategy to check for entry signals
+        const signal = model.strategy.processTick(book);
+        
+        // C. If an entry signal is generated, execute it immediately
+        if (signal) {
+          if (!isTradingActive) {
+            continue;
           }
-          return;
+          logDebug(`[SIGNAL GENERATED] [${modelId}] ${signal.symbol} | ${signal.side} | Price: ${signal.price} | Reason: ${signal.reason}`);
+          model.execution.executeSignal(signal).then(() => {
+            // Immediately update browser UI upon entry execution
+            sendDashboardUpdate();
+          });
         }
-        logDebug(`[SIGNAL GENERATED] ${signal.symbol} | ${signal.side} | Price: ${signal.price} | Reason: ${signal.reason}`);
-        execution.executeSignal(signal).then(() => {
-          // Immediately update browser UI upon entry execution
-          sendDashboardUpdate();
-        });
+      } catch (err: any) {
+        logDebug(`ERROR in strategy or execution tick processing for ${modelId}: ${err.message}`);
       }
-    } catch (err: any) {
-      logDebug(`ERROR in strategy or execution tick processing: ${err.message}`);
     }
 
     // Dynamic browser throttle: send general updates every 5 ticks to keep UI smooth and fluid
@@ -194,61 +243,139 @@ async function main() {
   // 5. Set up periodic dashboard redrawing and Safeguard Position Evaluator (once per second)
   const dashboardInterval = setInterval(() => {
     
-    // Proactive Safeguard Evaluator: force position risk evaluation using cached prices 
-    // to handle slow-ticking assets like MANTA networks or during low liquidity periods.
-    const activePositions = execution.getActivePositions();
-    for (const pos of activePositions) {
-      const lastPrice = lastKnownPrices[pos.symbol];
-      if (lastPrice) {
-        execution.evaluatePositions(pos.symbol, lastPrice.bid, lastPrice.ask);
+    // Proactive Safeguard Evaluator for each model
+    for (const [modelId, model] of Object.entries(models)) {
+      const activePositions = model.execution.getActivePositions();
+      for (const pos of activePositions) {
+        const lastPrice = lastKnownPrices[pos.symbol];
+        if (lastPrice) {
+          model.execution.evaluatePositions(pos.symbol, lastPrice.bid, lastPrice.ask);
+        }
       }
     }
 
-    execution.renderDashboard();
-    
-    // Inject a live heartbeat directly into the dashboard output
-    console.log(`\x1b[36m Heartbeat  : Active \x1b[0m`);
-    console.log(`\x1b[36m Tick Count : ${tickCount} live price packets processed\x1b[0m`);
+    // Render consolidated dashboard to console
+    console.clear();
+    console.log('\x1b[35m================================================================================\x1b[0m');
+    console.log('\x1b[1m\x1b[33m               ANTIGRAVITY MULTI-MODEL HFT TRADING SYSTEMS                     \x1b[0m');
+    console.log(`\x1b[37m Running Mode   : ${CONFIG.SIMULATION_MODE ? 'LIVE SIMULATION (Safe)' : 'LIVE TRADING (Real API)'}\x1b[0m`);
+    console.log(`\x1b[37m Engine Status  : ${isTradingActive ? '\x1b[32mACTIVE\x1b[37m' : '\x1b[31mPAUSED\x1b[37m'} | Ticks Processed: ${tickCount}\x1b[0m`);
+    console.log('\x1b[35m================================================================================\x1b[0m');
+    console.log('\x1b[1m Model Performance Overview:\x1b[0m');
+    console.log('--------------------------------------------------------------------------------');
+    console.log('  Model ID       | Net Profit  | Win Rate | Trades | Active Pos');
+    console.log('--------------------------------------------------------------------------------');
+    for (const [modelId, model] of Object.entries(models)) {
+      const stats = model.execution.getStats();
+      const activeCount = model.execution.getActivePositions().length;
+      const netProfitStr = `${stats.netProfitUsd >= 0 ? '+' : ''}$${stats.netProfitUsd.toFixed(4)}`;
+      const pnlColor = stats.netProfitUsd >= 0 ? '\x1b[32m' : '\x1b[31m';
+      const wrColor = stats.winRate >= 70 ? '\x1b[32m' : stats.winRate >= 50 ? '\x1b[33m' : '\x1b[31m';
+      
+      const modelPadded = modelId.padEnd(16);
+      const profitPadded = `${pnlColor}${netProfitStr.padEnd(11)}\x1b[0m`;
+      const wrPadded = `${wrColor}${stats.winRate.toFixed(2)}%\x1b[0m`.padEnd(19);
+      const tradesPadded = stats.totalTrades.toString().padEnd(6);
+      
+      console.log(`  ${modelPadded} | ${profitPadded} | ${wrPadded} | ${tradesPadded} | ${activeCount}`);
+    }
+    console.log('\x1b[35m================================================================================\x1b[0m');
     console.log(`\x1b[90m Active Markets Ingesting: [${Object.keys(symbolTickCounts).join(', ')}]\x1b[0m`);
-    console.log(`\x1b[90m Web Dashboard URL         : http://localhost:3000/\x1b[0m`);
+    console.log(`\x1b[90m Web Dashboard URL         : http://localhost:10001/\x1b[0m`);
     console.log(`\x1b[90m Diagnostic log written to : ${logFilePath}\x1b[0m`);
     console.log('\x1b[35m================================================================================\x1b[0m');
   }, 1000);
 
   // 5b. Dynamic AI Parameter Optimizer Loop (Every 3 minutes)
   const runParameterOptimization = async () => {
-    logDebug('Triggering dynamic AI parameter optimization with NVIDIA Llama 3.1 8B...');
+    logDebug('Triggering dynamic AI parameter optimization for all active models...');
     const activeSymbols = Object.keys(CONFIG.SYMBOLS);
-    const optimized = await nvidiaObserver.optimizeParameters(
-      execution.getStats(),
-      execution.getTradesHistory(),
-      activeSymbols
-    );
+    const timeframes = ['5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'];
+    const candleData: Record<string, Record<string, any[]>> = {};
 
-    if (optimized && optimized.parameters) {
-      logDebug(`[AI OPTIMIZER] Received parameters shift from Llama: ${JSON.stringify(optimized.parameters)}`);
-      
-      // Save the latest analytical thoughts of the AI
-      latestAiInsights = optimized.analysis || {};
-      strategy.setAiBiases(latestAiInsights);
+    logDebug('Fetching multi-timeframe candles from Hyperliquid in parallel...');
+    
+    // Initialize structure
+    for (const symbol of activeSymbols) {
+      candleData[symbol] = {};
+    }
 
-      for (const [symbol, params] of Object.entries(optimized.parameters)) {
-        const symbolConfig = (CONFIG.SYMBOLS as any)[symbol];
-        if (symbolConfig) {
-          symbolConfig.obiThreshold = params.obiThreshold;
-          symbolConfig.zScoreThreshold = params.zScoreThreshold;
-          symbolConfig.takeProfitPct = params.takeProfitPct;
-          symbolConfig.stopLossPct = params.stopLossPct;
-          logDebug(`[AI OPTIMIZER] Applied updated params for ${symbol}: OBI=${params.obiThreshold}, Z=${params.zScoreThreshold}, TP=${(params.takeProfitPct*100).toFixed(2)}%, SL=${(params.stopLossPct*100).toFixed(2)}%`);
+    try {
+      const fetchPromises: Promise<void>[] = [];
+      for (const symbol of activeSymbols) {
+        for (const tf of timeframes) {
+          fetchPromises.push(
+            exchange.getCandleSnapshot(symbol, tf, 10).then(candles => {
+              candleData[symbol][tf] = candles;
+            }).catch(err => {
+              logDebug(`Error fetching candles for ${symbol} (${tf}): ${err.message}`);
+              candleData[symbol][tf] = [];
+            })
+          );
         }
       }
-      console.log('\n\x1b[32m[AI OPTIMIZER] Meta Llama 3.1 8B successfully optimized all parameters and updated market insights!\x1b[0m');
-      
-      // Instantly push update to refresh UI with AI reasons
-      sendDashboardUpdate();
-    } else {
-      logDebug('[AI OPTIMIZER] No optimization returned (fallback to default parameters).');
+      await Promise.all(fetchPromises);
+      logDebug('Successfully fetched all multi-timeframe candles.');
+    } catch (err: any) {
+      logDebug(`Error during parallel candle fetching: ${err.message}`);
     }
+
+    // Run optimization for each AI-configured model in CONFIG.MODELS in parallel
+    const optimizationPromises = Object.entries(CONFIG.MODELS).map(async ([modelId, modelConf]) => {
+      // If it's static, skip AI optimization
+      if (modelConf.modelTag === 'static') {
+        return;
+      }
+      
+      const model = models[modelId];
+      if (!model) return;
+
+      try {
+        logDebug(`[AI OPTIMIZER] [${modelId}] Calling NVIDIA API for model tag: ${modelConf.modelTag}`);
+        const currentParams = model.strategy.getAllParams();
+
+        let optimized = null;
+        if (modelConf.modelTag === 'gemini-pro') {
+          optimized = await geminiObserver.optimizeParameters(
+            model.execution.getStats(),
+            model.execution.getTradesHistory(),
+            activeSymbols,
+            candleData,
+            modelConf.modelTag,
+            currentParams
+          );
+        } else {
+          optimized = await nvidiaObserver.optimizeParameters(
+            model.execution.getStats(),
+            model.execution.getTradesHistory(),
+            activeSymbols,
+            candleData,
+            modelConf.modelTag,
+            currentParams
+          );
+        }
+
+        if (optimized && optimized.parameters) {
+          logDebug(`[AI OPTIMIZER] [${modelId}] Received parameters shift: ${JSON.stringify(optimized.parameters)}`);
+          
+          latestAiInsights[modelId] = optimized.analysis || {};
+          model.strategy.setAiBiases(latestAiInsights[modelId]);
+
+          for (const [symbol, params] of Object.entries(optimized.parameters)) {
+            model.strategy.updateParams(symbol, params as any);
+            logDebug(`[AI OPTIMIZER] [${modelId}] Applied updated params for ${symbol}: OBI=${params.obiThreshold}, Z=${params.zScoreThreshold}, TP=${((params.takeProfitPct || 0)*100).toFixed(2)}%, SL=${((params.stopLossPct || 0)*100).toFixed(2)}%`);
+          }
+        }
+      } catch (err: any) {
+        logDebug(`Error optimizing model ${modelId}: ${err.message}`);
+      }
+    });
+
+    await Promise.all(optimizationPromises);
+    logDebug('Finished parallel parameter optimizations.');
+    
+    // Instantly push update to refresh UI with AI reasons
+    sendDashboardUpdate();
   };
 
   const aiOptimizationInterval = setInterval(runParameterOptimization, 180000);
@@ -273,7 +400,10 @@ async function main() {
     console.log('\x1b[36m================================================================================\x1b[0m');
     console.log('\x1b[1m\x1b[32m                        FINAL HFT TRADING SESSION SUMMARY                       \x1b[0m');
     console.log('\x1b[36m================================================================================\x1b[0m');
-    execution.renderDashboard();
+    for (const [modelId, model] of Object.entries(models)) {
+      console.log(`\n\x1b[1m[MODEL: ${modelId}]\x1b[0m`);
+      model.execution.renderDashboard();
+    }
     console.log('\x1b[32m[SYSTEM] Safely offline. Goodbye!\x1b[0m');
     process.exit(0);
   };

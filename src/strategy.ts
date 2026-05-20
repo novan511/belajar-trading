@@ -7,11 +7,16 @@ interface SymbolState {
   fastEma: number | null;
   lastTickTime: number;
   lastHistoryTime: number; // Decoupled: tracks when history window was updated
+  obiThreshold: number;
+  zScoreThreshold: number;
+  takeProfitPct: number;
+  stopLossPct: number;
 }
 
 export class StrategyManager {
   private states: Map<string, SymbolState> = new Map();
   private aiBiases: Record<string, 'BULLISH' | 'BEARISH' | 'NEUTRAL'> = {};
+  private macroTrends: Record<string, 'BULLISH' | 'BEARISH' | 'NEUTRAL'> = {};
 
   public setAiBiases(biases: Record<string, any>) {
     this.aiBiases = {};
@@ -22,6 +27,10 @@ export class StrategyManager {
     }
   }
 
+  public setMacroTrends(trends: Record<string, 'BULLISH' | 'BEARISH' | 'NEUTRAL'>) {
+    this.macroTrends = trends;
+  }
+
   constructor() {
     // Initialize states for configured symbols
     for (const [key, symbolConfig] of Object.entries(CONFIG.SYMBOLS)) {
@@ -30,9 +39,49 @@ export class StrategyManager {
         midPriceHistory: [],
         fastEma: null,
         lastTickTime: 0,
-        lastHistoryTime: 0
+        lastHistoryTime: 0,
+        obiThreshold: symbolConfig.obiThreshold,
+        zScoreThreshold: symbolConfig.zScoreThreshold,
+        takeProfitPct: symbolConfig.takeProfitPct,
+        stopLossPct: symbolConfig.stopLossPct
       });
     }
+  }
+
+  public updateParams(symbol: string, params: { obiThreshold: number; zScoreThreshold: number; takeProfitPct: number; stopLossPct: number }) {
+    const state = this.states.get(symbol);
+    if (state) {
+      state.obiThreshold = params.obiThreshold;
+      state.zScoreThreshold = params.zScoreThreshold;
+      state.takeProfitPct = params.takeProfitPct;
+      state.stopLossPct = params.stopLossPct;
+    }
+  }
+
+  public getParams(symbol: string) {
+    const state = this.states.get(symbol);
+    if (state) {
+      return {
+        obiThreshold: state.obiThreshold,
+        zScoreThreshold: state.zScoreThreshold,
+        takeProfitPct: state.takeProfitPct,
+        stopLossPct: state.stopLossPct
+      };
+    }
+    return null;
+  }
+
+  public getAllParams(): Record<string, any> {
+    const snapshot: Record<string, any> = {};
+    for (const [symbol, state] of this.states.entries()) {
+      snapshot[symbol] = {
+        obiThreshold: state.obiThreshold,
+        zScoreThreshold: state.zScoreThreshold,
+        takeProfitPct: state.takeProfitPct,
+        stopLossPct: state.stopLossPct
+      };
+    }
+    return snapshot;
   }
 
   /**
@@ -120,9 +169,9 @@ export class StrategyManager {
 
     // 7. Check Strategy Entry Rules
     // Long entry conditions (Buy)
-    const hasLongImbalance = obi > symbolConfig.obiThreshold;
+    const hasLongImbalance = obi > state.obiThreshold;
     const hasLongMicroPriceDivergence = microPrice > midPrice + (symbolConfig.tickSize * 0.1);
-    const isOversold = zScore < -symbolConfig.zScoreThreshold;
+    const isOversold = zScore < -state.zScoreThreshold;
     const hasUpwardMomentum = midPrice > state.fastEma;
 
     // Check AI Bias Lock Trend Safeguard
@@ -130,30 +179,44 @@ export class StrategyManager {
     const isBuyAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BULLISH';
 
     if (hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum && isBuyAllowedByAI) {
-      const reason = `OBI(${obi.toFixed(2)}) > ${symbolConfig.obiThreshold} & Z(${zScore.toFixed(2)}) < -${symbolConfig.zScoreThreshold} & MicroPrice(${microPrice.toFixed(2)}) > Mid(${midPrice.toFixed(2)})`;
+      const confidence: 'HIGH' | 'LOW' = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5) ? 'HIGH' : 'LOW';
+      // BTC Kill‑Switch check
+      if (this.macroTrends['BTC'] === 'BEARISH') {
+        // Abort BUY signal during BTC bearish trend
+        return null;
+      }
+      const reason = `OBI(${obi.toFixed(2)}) > ${state.obiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) < -${state.zScoreThreshold.toFixed(2)} & MicroPrice(${microPrice.toFixed(2)}) > Mid(${midPrice.toFixed(2)})`;
       return {
         symbol: book.symbol,
         side: 'BUY',
-        price: pAsk, // Enter at best ask price (Taker order simulated)
-        reason
+        price: pAsk,
+        reason,
+        confidence
       };
     }
 
     // Short entry conditions (Sell)
-    const hasShortImbalance = obi < -symbolConfig.obiThreshold;
+    const hasShortImbalance = obi < -state.obiThreshold;
     const hasShortMicroPriceDivergence = microPrice < midPrice - (symbolConfig.tickSize * 0.1);
-    const isOverbought = zScore > symbolConfig.zScoreThreshold;
+    const isOverbought = zScore > state.zScoreThreshold;
     const hasDownwardMomentum = midPrice < state.fastEma;
 
     const isSellAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BEARISH';
 
     if (hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum && isSellAllowedByAI) {
-      const reason = `OBI(${obi.toFixed(2)}) < -${symbolConfig.obiThreshold} & Z(${zScore.toFixed(2)}) > ${symbolConfig.zScoreThreshold} & MicroPrice(${microPrice.toFixed(2)}) < Mid(${midPrice.toFixed(2)})`;
+      const confidence: 'HIGH' | 'LOW' = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5) ? 'HIGH' : 'LOW';
+      // BTC Kill‑Switch check
+      if (this.macroTrends['BTC'] === 'BULLISH') {
+        // Abort SELL signal during BTC bullish trend
+        return null;
+      }
+      const reason = `OBI(${obi.toFixed(2)}) < -${state.obiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) > ${state.zScoreThreshold.toFixed(2)} & MicroPrice(${microPrice.toFixed(2)}) < Mid(${midPrice.toFixed(2)})`;
       return {
         symbol: book.symbol,
         side: 'SELL',
-        price: pBid, // Enter at best bid price (Taker order simulated)
-        reason
+        price: pBid,
+        reason,
+        confidence
       };
     }
 
