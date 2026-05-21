@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Antigravity Multi-Model HFT Dashboard</title>
+  <title>Llama 3.1 Quantitative Trading Intelligence Dashboard</title>
   <!-- Google Fonts Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -703,8 +703,8 @@
       <div class="brand-section">
         <div class="logo-glow"></div>
         <div>
-          <h1>ANTIGRAVITY MULTI-MODEL</h1>
-          <p style="font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.5px;">HYPERLIQUID MULTI-MODEL COMPARISON HUB</p>
+          <h1>LLAMA 3.1 QUANTUM TELEMETRY</h1>
+          <p style="font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.5px;">HYPERLIQUID REAL-TIME MULTI-TIMEFRAME QUANTITATIVE CONFIRMATION SYSTEM</p>
         </div>
       </div>
       
@@ -733,35 +733,46 @@
       </div>
     </header>
 
-    <!-- MODEL TABS SELECTOR -->
-    <div class="tabs-wrapper">
-      <div class="tabs-label">Trading Strategy Models (Click to view telemetry)</div>
-      <div class="tabs-grid" id="models-tabs-container">
-        <!-- Model tabs with live profits will be dynamically generated -->
-        <button class="model-tab active" onclick="selectModel('Llama_8B')" id="tab-Llama_8B" style="border-color: var(--neon-cyan);">
-          <span class="model-tab-name" style="color: var(--text-main);">Llama 3.1 8B (AI)</span>
-          <span class="model-tab-profit" id="tab-profit-Llama_8B" style="color: var(--neon-cyan);">$0.0000</span>
-        </button>
-        <button class="model-tab" onclick="selectModel('Gemini_Pro')" id="tab-Gemini_Pro" style="border-color: var(--neon-orange);">
-  <span class="model-tab-name" style="color: var(--text-main);">Gemini Pro (AI)</span>
-  <span class="model-tab-profit" id="tab-profit-Gemini_Pro" style="color: var(--neon-orange);">$0.0000</span>
-</button>
-<button class="model-tab" onclick="selectModel('Nemotron_70B')" id="tab-Nemotron_70B">
-          <span class="model-tab-name">Nemotron 70B (AI)</span>
-          <span class="model-tab-profit" id="tab-profit-Nemotron_70B">$0.0000</span>
-        </button>
-        <button class="model-tab" onclick="selectModel('Mistral_Large')" id="tab-Mistral_Large">
-          <span class="model-tab-name">Mistral Large (AI)</span>
-          <span class="model-tab-profit" id="tab-profit-Mistral_Large">$0.0000</span>
-        </button>
-        <button class="model-tab" onclick="selectModel('Llama_70B')" id="tab-Llama_70B">
-          <span class="model-tab-name">Llama 3.1 70B (AI)</span>
-          <span class="model-tab-profit" id="tab-profit-Llama_70B">$0.0000</span>
-        </button>
-        <button class="model-tab" onclick="selectModel('Static_Base')" id="tab-Static_Base">
-          <span class="model-tab-name">Static Base (Control)</span>
-          <span class="model-tab-profit" id="tab-profit-Static_Base">$0.0000</span>
-        </button>
+    <!-- CRYPTO MARKET INTELLIGENCE BAR -->
+    <div class="panel" style="margin-bottom: 0px; padding: 16px 24px;">
+      <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="font-size: 24px;">📊</div>
+          <div>
+            <h3 style="font-size: 15px; font-weight: 600; color: var(--text-main); letter-spacing: 0.5px;">GLOBAL MARKET DOMINANCE OVERVIEW</h3>
+            <p style="font-size: 11px; color: var(--text-muted);">Real-time global data from CoinGecko API</p>
+          </div>
+        </div>
+        
+        <div style="display: flex; gap: 32px; flex-wrap: wrap; flex-grow: 1; justify-content: flex-end;">
+          <!-- BTC Dominance -->
+          <div style="display: flex; align-items: center; gap: 12px; min-width: 240px; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); padding: 8px 16px; border-radius: 12px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(255, 153, 0, 0.1); border: 1px solid rgba(255, 153, 0, 0.2); display: flex; align-items: center; justify-content: center; color: #f90; font-weight: bold; font-size: 12px;">BTC</div>
+            <div style="flex-grow: 1;">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span style="color: var(--text-muted); font-weight: 500;">BTC Dominance</span>
+                <span style="color: #f90; font-weight: 700;" id="dom-btc-val">54.00%</span>
+              </div>
+              <div style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+                <div id="dom-btc-bar" style="height: 100%; width: 54%; background: linear-gradient(90deg, #f90, #ffb03a); border-radius: 3px; transition: width 0.8s ease;"></div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- USDT Dominance -->
+          <div style="display: flex; align-items: center; gap: 12px; min-width: 240px; background: rgba(255,255,255,0.01); border: 1px solid rgba(255,255,255,0.03); padding: 8px 16px; border-radius: 12px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: rgba(38, 161, 123, 0.1); border: 1px solid rgba(38, 161, 123, 0.2); display: flex; align-items: center; justify-content: center; color: #26a17b; font-weight: bold; font-size: 12px;">USDT</div>
+            <div style="flex-grow: 1;">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px;">
+                <span style="color: var(--text-muted); font-weight: 500;">USDT Dominance</span>
+                <span style="color: #26a17b; font-weight: 700;" id="dom-usdt-val">5.50%</span>
+              </div>
+              <div style="height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden;">
+                <div id="dom-usdt-bar" style="height: 100%; width: 5.5%; background: linear-gradient(90deg, #26a17b, #00ff87); border-radius: 3px; transition: width 0.8s ease;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -911,6 +922,7 @@
     let currentModelId = 'Llama_8B';
 
     const modelConfigs = {
+<<<<<<< HEAD
   Llama_8B: { label: 'Llama 3.1 8B (AI)', color: '#00f2fe' },
   Nemotron_70B: { label: 'Nemotron 70B (AI)', color: '#ffd600' },
   Mistral_Large: { label: 'Mistral Large (AI)', color: '#a000ff' },
@@ -920,6 +932,10 @@
 };
 
 
+=======
+      Llama_8B: { label: 'Llama 3.1 8B Premium Quant Strategy', color: '#00f2fe' }
+    };
+>>>>>>> 9b5ce032e3912accee19d097ca5f667620741578
 
     const flowLed = document.getElementById('flow-led');
     const ticksCount = document.getElementById('ticks-count');
@@ -984,26 +1000,6 @@
     function selectModel(modelId) {
       if (!modelConfigs[modelId]) return;
       currentModelId = modelId;
-
-      // Update active tabs styles
-      Object.keys(modelConfigs).forEach(mId => {
-        const btn = document.getElementById(`tab-${mId}`);
-        const nameEl = btn.querySelector('.model-tab-name');
-        const profitEl = btn.querySelector('.model-tab-profit');
-
-        if (mId === modelId) {
-          btn.classList.add('active');
-          btn.style.borderColor = modelConfigs[mId].color;
-          nameEl.style.color = 'var(--text-main)';
-          profitEl.style.color = modelConfigs[mId].color;
-        } else {
-          btn.classList.remove('active');
-          btn.style.borderColor = 'var(--border-light)';
-          nameEl.style.color = 'var(--text-muted)';
-          profitEl.style.color = 'var(--text-muted)';
-        }
-      });
-
       if (cachedDashboardData) {
         updateUI(cachedDashboardData);
       }
@@ -1206,15 +1202,23 @@
       // 0. Update Equity Curve Chart
       drawEquityChart(data.models);
 
-      // Loop through all models to update their mini tab profits
-      for (const [modelId, model] of Object.entries(data.models)) {
-        const profitTextEl = document.getElementById(`tab-profit-${modelId}`);
-        if (profitTextEl) {
-          const netPnl = parseFloat(model.stats.netProfitUsd);
-          profitTextEl.innerText = (netPnl >= 0 ? '+' : '') + '$' + netPnl.toFixed(2);
-          profitTextEl.style.color = netPnl >= 0 ? 'var(--neon-cyan)' : 'var(--neon-red)';
-        }
+      // Update Global Market Dominance from CoinGecko data
+      if (data.globalDominance) {
+        const btcDom = parseFloat(data.globalDominance.btcDom || 54.0);
+        const usdtDom = parseFloat(data.globalDominance.usdtDom || 5.5);
+        
+        const domBtcVal = document.getElementById('dom-btc-val');
+        const domBtcBar = document.getElementById('dom-btc-bar');
+        const domUsdtVal = document.getElementById('dom-usdt-val');
+        const domUsdtBar = document.getElementById('dom-usdt-bar');
+        
+        if (domBtcVal) domBtcVal.innerText = btcDom.toFixed(2) + '%';
+        if (domBtcBar) domBtcBar.style.width = Math.min(100, Math.max(0, btcDom)) + '%';
+        if (domUsdtVal) domUsdtVal.innerText = usdtDom.toFixed(2) + '%';
+        if (domUsdtBar) domUsdtBar.style.width = Math.min(100, Math.max(0, usdtDom * 10)) + '%'; // Scaled 10x for visual balance
       }
+
+
 
       // Extract current selected model data
       const currentModel = data.models[currentModelId];

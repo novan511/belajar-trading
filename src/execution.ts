@@ -1,4 +1,5 @@
 import { CONFIG } from './config.js';
+import { TradeMemory } from './trade_memory.js';
 import { Side, TradeSignal, Position, TradeRecord, ExecutionStats } from './types.js';
 import { ExchangeConnector } from './exchange.js';
 import fs from 'fs';
@@ -21,11 +22,14 @@ export class ExecutionEngine {
     averageHoldTimeSec: 0
   };
 
+  private tradeMemory: TradeMemory;
+
   private modelId: string;
 
-  constructor(modelId: string, exchange: ExchangeConnector) {
+  constructor(modelId: string, exchange: ExchangeConnector, tradeMemory: TradeMemory) {
     this.modelId = modelId;
     this.exchange = exchange;
+    this.tradeMemory = tradeMemory;
     this.loadTradesArchive();
   }
 
@@ -376,6 +380,9 @@ export class ExecutionEngine {
 
     this.tradesHistory.push(record);
     this.saveTradesArchive();
+    if (this.tradeMemory) {
+      this.tradeMemory.add(record);
+    }
     
     // Remove individual position from array in Map
     const existingList = this.activePositions.get(position.symbol) || [];

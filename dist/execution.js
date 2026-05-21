@@ -16,7 +16,9 @@ export class ExecutionEngine {
         netProfitUsd: 0,
         averageHoldTimeSec: 0
     };
-    constructor(exchange) {
+    modelId;
+    constructor(modelId, exchange) {
+        this.modelId = modelId;
         this.exchange = exchange;
         this.loadTradesArchive();
     }
@@ -88,7 +90,8 @@ export class ExecutionEngine {
                 }
                 // STOP LOSS + : Force SL to cross above entry price + roundtrip fee to lock in a free trade!
                 const feePlusStopLoss = position.entryPrice * (1 + roundtripFeePct);
-                if (currentBid >= feePlusStopLoss && position.stopLossPrice < feePlusStopLoss) {
+                const activationBuffer = position.entryPrice * (1 + roundtripFeePct + 0.001); // 0.1% buffer
+                if (currentBid >= activationBuffer && position.stopLossPrice < feePlusStopLoss) {
                     position.stopLossPrice = feePlusStopLoss;
                     console.log(`\x1b[32m[STOP LOSS + ACTIVATED] ${position.symbol} SL moved to fee-breakeven floor (${this.formatPrice(position.symbol, feePlusStopLoss)})\x1b[0m`);
                 }
@@ -141,7 +144,8 @@ export class ExecutionEngine {
                 }
                 // STOP LOSS + : Force SL to cross below entry price - roundtrip fee to lock in a free trade!
                 const feePlusStopLoss = position.entryPrice * (1 - roundtripFeePct);
-                if (currentAsk <= feePlusStopLoss && position.stopLossPrice > feePlusStopLoss) {
+                const activationBuffer = position.entryPrice * (1 - roundtripFeePct - 0.001); // 0.1% buffer
+                if (currentAsk <= activationBuffer && position.stopLossPrice > feePlusStopLoss) {
                     position.stopLossPrice = feePlusStopLoss;
                     console.log(`\x1b[32m[STOP LOSS + ACTIVATED] ${position.symbol} SL moved to fee-breakeven floor (${this.formatPrice(position.symbol, feePlusStopLoss)})\x1b[0m`);
                 }
@@ -214,7 +218,9 @@ export class ExecutionEngine {
                 }
             }
         }
-        const tradeSize = coinConfig.tradeSizeUsd;
+        // Determine trade size based on confidence level
+        const baseSize = coinConfig.tradeSizeUsd;
+        const tradeSize = signal.confidence === 'LOW' ? baseSize * 0.3 : baseSize;
         const entryPrice = signal.price;
         const quantity = parseFloat((tradeSize / entryPrice).toFixed(this.getLotDecimalPlaces(coinConfig.lotSize)));
         if (quantity <= 0)
@@ -245,7 +251,8 @@ export class ExecutionEngine {
                     stopLossPrice,
                     highestPrice: order.executedPrice, // Initialize peak bid to entry price
                     lowestPrice: order.executedPrice, // Initialize trough ask to entry price
-                    entryReason: signal.reason
+                    entryReason: signal.reason,
+                    modelId: this.modelId
                 };
                 const existingList = this.activePositions.get(signal.symbol) || [];
                 existingList.push(position);
@@ -325,7 +332,8 @@ export class ExecutionEngine {
             feesUsd: totalFeesForTrade,
             netProfitUsd: netProfit,
             result,
-            entryReason: position.entryReason
+            entryReason: position.entryReason,
+            modelId: this.modelId
         };
         this.tradesHistory.push(record);
         this.saveTradesArchive();
@@ -355,7 +363,7 @@ export class ExecutionEngine {
      * Sleek, high-frequency real-time dashboard printed to console
      */
     renderDashboard() {
-        console.clear();
+        // console.clear(); // Disabled clear to prevent terminal flickering in multi-model parallel run
         console.log('\x1b[35m================================================================================\x1b[0m');
         console.log('\x1b[1m\x1b[33m                   HIGH-FREQUENCY TRADING (HFT) DASHBOARD                      \x1b[0m');
         console.log(`\x1b[37m Running Mode   : ${CONFIG.SIMULATION_MODE ? 'LIVE SIMULATION (Safe)' : 'LIVE TRADING (Real API)'}\x1b[0m`);
@@ -423,16 +431,16 @@ export class ExecutionEngine {
      */
     loadTradesArchive() {
         try {
-            const filePath = path.join(process.cwd(), 'trades_archive.json');
+            const filePath = path.join(process.cwd(), `trades_archive_${this.modelId}.json`);
             if (fs.existsSync(filePath)) {
                 const data = fs.readFileSync(filePath, 'utf-8');
                 this.tradesHistory = JSON.parse(data);
                 this.recalculateStats();
-                console.log(`\x1b[32m[PERSISTENT BRAIN] Hydrated ${this.tradesHistory.length} historical trades from trades_archive.json database.\x1b[0m`);
+                console.log(`\x1b[32m[PERSISTENT BRAIN] Hydrated ${this.tradesHistory.length} historical trades from trades_archive_${this.modelId}.json database.\x1b[0m`);
             }
         }
         catch (err) {
-            console.error(`[PERSISTENT BRAIN] Failed to load trades archive: ${err.message}`);
+            console.error(`[PERSISTENT BRAIN] Failed to load trades archive for ${this.modelId}: ${err.message}`);
         }
     }
     /**
@@ -440,11 +448,11 @@ export class ExecutionEngine {
      */
     saveTradesArchive() {
         try {
-            const filePath = path.join(process.cwd(), 'trades_archive.json');
+            const filePath = path.join(process.cwd(), `trades_archive_${this.modelId}.json`);
             fs.writeFileSync(filePath, JSON.stringify(this.tradesHistory, null, 2), 'utf-8');
         }
         catch (err) {
-            console.error(`[PERSISTENT BRAIN] Failed to save trades archive: ${err.message}`);
+            console.error(`[PERSISTENT BRAIN] Failed to save trades archive for ${this.modelId}: ${err.message}`);
         }
     }
     /**

@@ -32,7 +32,7 @@ export class NvidiaObserver {
   }
 
   /**
-   * Invokes Llama 3.1 8B to analyze the HFT session stats & trades, returning optimized parameters and qualitative analyses.
+   * Invokes Llama 3.1 8B to analyze the session stats, technical indicators, and global dominance, returning optimized parameters.
    */
   public async optimizeParameters(
     stats: ExecutionStats,
@@ -40,7 +40,9 @@ export class NvidiaObserver {
     activeSymbols: string[],
     candleData: Record<string, Record<string, any[]>>,
     modelOverride?: string,
-    currentParamsSnapshot?: Record<string, any>
+    currentParamsSnapshot?: Record<string, any>,
+    calculatedIndicators?: Record<string, { fibonacci: any; fvgs: any[]; srLevels: any[]; poc: number }>,
+    globalDominance?: { btcDom: number; usdtDom: number }
   ): Promise<NvidiaObserverResponse | null> {
     if (!this.apiKey) return null;
 
@@ -71,29 +73,34 @@ export class NvidiaObserver {
       }
     }
 
-    const systemPrompt = `You are a quantitative strategist AI Observer for an in-memory sub-second high-frequency trading (HFT) bot.
-Your role is to analyze multi-timeframe candlestick data (5m, 15m, 30m, 1h, 4h, 1d, 1w, 1M), analyze trading session results, determine the macro-to-micro market bias per coin, and optimize parameters dynamically for the next trading window.
+    const systemPrompt = `You are a premium quantitative strategist AI Observer for an advanced multi-timeframe swing/scalping trading bot.
+Your role is to analyze multi-timeframe candlestick data (5m, 15m, 30m, 1h, 4h), premium technical indicators (Fibonacci Retracements, Fair Value Gaps, Support & Resistance levels, Point of Control), global market dominance stats (BTC & USDT dominance), and recent trade outcomes.
+Using this information, determine the macro-to-micro market bias per symbol and optimize trading parameters dynamically for the next trading window.
+
+MARKET DOMINANCE DATA INTEGRATION:
+- BTC Dominance (BTC.D): Represents BTC's share of the market. High/Rising BTC.D during market strength means capital is flowing into BTC (favor BTC trades over altcoins). Falling BTC.D during alt-season means alts are stronger (favor SOL, SUI, XRP, DOGE, HYPE).
+- USDT Dominance (USDT.D): Represents cash sideline levels. High/Rising USDT.D indicates market fear/panic selling (tighten Stop Losses, wait for deeper pullbacks). Falling USDT.D indicates high risk-on buying (loosen entry requirements, trade aggressively).
 
 MULTI-TIMEFRAME ANALYSIS MANDATE (TOP-DOWN ANALYSIS):
-Analyze the provided multiTimeframeCandles for each coin across:
-- Macro Trend: Monthly (1M), Weekly (1w), and Daily (1d). Is the coin in a long-term bull market or bear market?
-- Medium Trend: 4-Hour (4h), 1-Hour (1h), and 30-Minute (30m). What is the intermediate swing structure?
-- Micro Trend: 15-Minute (15m) and 5-Minute (5m). What is the immediate direction?
+Analyze the provided candle trends and premium indicators for each symbol across:
+- Macro Trend: 4-Hour (4h) and 1-Hour (1h). What is the primary swing structure?
+- Micro Trend: 15-Minute (15m) and 5-Minute (5m). What is the immediate execution direction?
 
 You must synthesize these timeframes:
-- If Macro (1M, 1w, 1d), Medium (4h, 1h, 30m), and Micro (15m, 5m) are strongly bullish, lock the bias as "BULLISH".
-- If they are strongly bearish, lock the bias as "BEARISH".
-- If they are conflicting or flat, set the bias to "NEUTRAL".
+- If both Macro and Micro are strongly bullish, lock bias as "BULLISH".
+- If they are strongly bearish, lock bias as "BEARISH".
+- If conflicting, flat, or consolidating at key S/R zones, set bias to "NEUTRAL".
 
-RISK MANAGEMENT & TIGHTENING RULE:
-1. Fee Protection: Taker fees eat up HFT profits. If win rate is low, or to generally protect capital, widen the entry thresholds (obiThreshold, zScoreThreshold) to make the HFT executor highly selective (trade only at key levels, reducing trade count and saving transaction fees).
-2. Tight Stop Loss: To prevent a few bad trades from erasing many small wins, you MUST enforce a tight stopLossPct relative to takeProfitPct. Keep stopLossPct at 0.4x to 0.6x of takeProfitPct (e.g. if takeProfitPct is 0.0100 (1.0%), stopLossPct must be between 0.0040 (0.4%) and 0.0060 (0.6%)). NEVER allow stopLossPct to exceed 0.7x of takeProfitPct.
-
-PARAMETER REFERENCE:
-1. obiThreshold: [0.12 to 0.40] - Imbalance sensitivity. Higher means more selective entry.
-2. zScoreThreshold: [0.6 to 1.8] - Mean-reversion trigger depth. Higher means waiting for a deeper market pullback before entry.
-3. takeProfitPct: [0.0020 to 0.0200] (0.20% to 2.0%) - Hard profit target.
-4. stopLossPct: [0.0010 to 0.0120] (0.10% to 1.20%) - Stop loss. MUST be 0.4x to 0.6x of takeProfitPct.
+STRICT RISK-TO-REWARD (R:R) MANDATE (1:2 to 1:4):
+1. Profit Protection & Edge: To ensure long-term profitability, you MUST enforce a Risk-to-Reward ratio between 1:2 and 1:4 for every single symbol.
+2. Stop Loss limits: stopLossPct MUST be strictly between 0.25x and 0.50x of takeProfitPct.
+   - For example: if takeProfitPct is 0.0200 (2.0%), stopLossPct MUST be between 0.0050 (0.50%) and 0.0100 (1.00%).
+   - NEVER let stopLossPct exceed 0.50x of takeProfitPct!
+3. Parameter bounds:
+   - obiThreshold: [0.12 to 0.40] - Tick volume imbalance sensitivity.
+   - zScoreThreshold: [0.6 to 1.8] - Mean-reversion tick trigger depth.
+   - takeProfitPct: [0.0100 to 0.0500] (1.0% to 5.0%) - Swing target.
+   - stopLossPct: [0.0030 to 0.0200] (0.3% to 2.0%) - Swing stop loss. MUST be 0.25x to 0.50x of takeProfitPct.
 
 OUTPUT FORMAT:
 Return ONLY a valid, raw JSON object matching the exact schema below. Do not output markdown code fences, do not write explanations outside JSON, do not add text before or after the JSON.
@@ -107,7 +114,7 @@ REQUIRED JSON SCHEMA:
     "SYMBOL": { 
       "bias": "BULLISH" | "BEARISH" | "NEUTRAL", 
       "confidence": number, 
-      "rationale": "Provide a very concise quantitative rationale in INDONESIAN explaining the trend (e.g., 'Tren bulanan s.d. 5m BULLISH kuat, parameter disesuaikan'). Keep it under 15 words." 
+      "rationale": "Provide a very concise quantitative rationale in INDONESIAN explaining the trend and key indicator levels (e.g., 'Mantul dari Fib 0.618 & Support kuat, FVG bullish terisi. Bias BULLISH, R:R 1:3 locked'). Keep it under 20 words." 
     }
   }
 }
@@ -115,10 +122,10 @@ REQUIRED JSON SCHEMA:
 Example Response:
 {
   "parameters": {
-    "BTC": { "obiThreshold": 0.22, "zScoreThreshold": 0.85, "takeProfitPct": 0.0045, "stopLossPct": 0.0025 }
+    "BTC": { "obiThreshold": 0.22, "zScoreThreshold": 0.85, "takeProfitPct": 0.0150, "stopLossPct": 0.0050 }
   },
   "analysis": {
-    "BTC": { "bias": "BULLISH", "confidence": 85, "rationale": "Tren makro mingguan dan harian BULLISH kuat, sementara tren mikro menunjukkan koreksi jangka pendek. Mengunci bias BULLISH dan merapatkan SL ke 0.55x dari TP untuk mempertahankan rasio R:R yang optimal." }
+    "BTC": { "bias": "BULLISH", "confidence": 90, "rationale": "Pantulan di Fib 0.618 dan Support $77K divalidasi. Konfirmasi FVG bullish, bias BULLISH dengan R:R 1:3 optimal." }
   }
 }`;
 
@@ -179,11 +186,13 @@ Example Response:
         netProfitUsd: parseFloat(stats.netProfitUsd.toFixed(4)),
         totalFeesUsd: parseFloat(stats.totalFeesUsd.toFixed(4))
       },
+      globalMarketDominance: globalDominance || { btcDom: 54.0, usdtDom: 5.5 },
       currentParameters: paramsSnapshot,
       allTimePerformancePerCoin: longTermStatsPerSymbol,
       recentTradesMicroContext: subsetTrades, // last 15 trades
       symbolsToOptimize: activeSymbols,
-      multiTimeframeCandles: summarizedCandles // Summarized trend data for each symbol
+      multiTimeframeCandles: summarizedCandles, // Summarized trend data for each symbol
+      premiumQuantitativeIndicators: calculatedIndicators || {} // Fibonacci, FVGs, S/R levels, and POC
     };
 
     try {
