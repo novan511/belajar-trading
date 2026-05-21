@@ -1,0 +1,19 @@
+[
+  {
+    "id": "hl-8RLPZXK8W",
+    "symbol": "ETH",
+    "side": "SELL",
+    "entryPrice": 2128.5,
+    "exitPrice": 2117.5,
+    "quantity": 0.141,
+    "entryTime": 1779358829703,
+    "exitTime": 1779359634855,
+    "holdTimeSec": 805.152,
+    "grossProfitUsd": 1.551,
+    "feesUsd": 0.0598686,
+    "netProfitUsd": 1.4911314,
+    "result": "WIN",
+    "entryReason": "FibSupport(0.4%) FibResistance(0.4%) SwingResistance(5) POCMagnet | OBI(-0.44) < -0.22 & Z(0.98) > 0.80",
+    "modelId": "Llama_8B"
+  }
+]

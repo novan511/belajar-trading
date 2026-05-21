@@ -2,6 +2,8 @@ import { CONFIG } from './config.js';
 export class StrategyManager {
     states = new Map();
     aiBiases = {};
+    macroTrends = {};
+    indicatorsCache = {};
     setAiBiases(biases) {
         this.aiBiases = {};
         for (const [symbol, info] of Object.entries(biases)) {
@@ -9,6 +11,15 @@ export class StrategyManager {
                 this.aiBiases[symbol] = info.bias;
             }
         }
+    }
+    setMacroTrends(trends) {
+        this.macroTrends = trends;
+    }
+    /**
+     * Caches premium technical indicators fetched from candle multi-timeframe analysis
+     */
+    setCalculatedIndicators(symbol, indicators) {
+        this.indicatorsCache[symbol] = indicators;
     }
     constructor() {
         // Initialize states for configured symbols
@@ -18,25 +29,67 @@ export class StrategyManager {
                 midPriceHistory: [],
                 fastEma: null,
                 lastTickTime: 0,
-                lastHistoryTime: 0
+                lastHistoryTime: 0,
+                obiThreshold: symbolConfig.obiThreshold,
+                zScoreThreshold: symbolConfig.zScoreThreshold,
+                takeProfitPct: symbolConfig.takeProfitPct,
+                stopLossPct: symbolConfig.stopLossPct
             });
         }
     }
+    updateParams(symbol, params) {
+        const state = this.states.get(symbol);
+        if (state) {
+            state.obiThreshold = params.obiThreshold;
+            state.zScoreThreshold = params.zScoreThreshold;
+            // Enforce strict Risk-to-Reward Ratio (1:2 to 1:4)
+            // SL must be between 0.25x and 0.50x of TP
+            const minSl = params.takeProfitPct * 0.25;
+            const maxSl = params.takeProfitPct * 0.50;
+            const clampedSl = Math.max(minSl, Math.min(maxSl, params.stopLossPct));
+            state.takeProfitPct = params.takeProfitPct;
+            state.stopLossPct = clampedSl;
+        }
+    }
+    getParams(symbol) {
+        const state = this.states.get(symbol);
+        if (state) {
+            return {
+                obiThreshold: state.obiThreshold,
+                zScoreThreshold: state.zScoreThreshold,
+                takeProfitPct: state.takeProfitPct,
+                stopLossPct: state.stopLossPct
+            };
+        }
+        return null;
+    }
+    getAllParams() {
+        const snapshot = {};
+        for (const [symbol, state] of this.states.entries()) {
+            snapshot[symbol] = {
+                obiThreshold: state.obiThreshold,
+                zScoreThreshold: state.zScoreThreshold,
+                takeProfitPct: state.takeProfitPct,
+                stopLossPct: state.stopLossPct
+            };
+        }
+        return snapshot;
+    }
     /**
-     * Process a new OrderBook tick and check for high-probability HFT signals.
-     * Runs at a high-speed sub-second tick-level (50ms gate).
+     * Process a new OrderBook tick and check for high-probability signals.
+     * Leverages a premium hybrid model: candle quantitative levels act as confirmation zones,
+     * while micro-imbalances (OBI & Z-score) trigger precise execution.
      */
     processTick(book) {
         const state = this.states.get(book.symbol);
         if (!state)
             return null;
         const now = Date.now();
-        // High-frequency HFT micro-throttle of 30ms to prevent double fills on the same millisecond packet
+        // Micro-throttle to prevent double fills
         if (now - state.lastTickTime < 30) {
             return null;
         }
         state.lastTickTime = now;
-        // Check if the order book is valid and has bids/asks
         if (book.bids.length === 0 || book.asks.length === 0) {
             return null;
         }
@@ -46,22 +99,17 @@ export class StrategyManager {
         const vBid = bestBid[1];
         const pAsk = bestAsk[0];
         const vAsk = bestAsk[1];
-        // 1. Calculate standard Mid Price
         const midPrice = (pBid + pAsk) / 2;
-        // 2. Calculate Micro-Price (weights price by opposite volumes)
-        // P_micro = (P_bid * V_ask + P_ask * V_bid) / (V_bid + V_ask)
         const totalVolume = vBid + vAsk;
         if (totalVolume === 0)
             return null;
         const microPrice = (pBid * vAsk + pAsk * vBid) / totalVolume;
-        // 3. Calculate Order Book Imbalance (OBI)
-        // OBI = (V_bid - V_ask) / (V_bid + V_ask)
         const obi = (vBid - vAsk) / totalVolume;
-        // 4 & 5. Decoupled Baseline: Update Mid-Price History & fast EMA once every 1000ms
+        // Decoupled Baseline: Update rolling window history & EMA
         if (now - state.lastHistoryTime >= 1000 || state.midPriceHistory.length === 0) {
             state.midPriceHistory.push(midPrice);
             if (state.midPriceHistory.length > CONFIG.ROLLING_WINDOW_SIZE) {
-                state.midPriceHistory.shift(); // Keep rolling window size
+                state.midPriceHistory.shift();
             }
             const emaPeriod = CONFIG.EMA_FAST_PERIOD;
             const k = 2 / (emaPeriod + 1);
@@ -73,56 +121,144 @@ export class StrategyManager {
             }
             state.lastHistoryTime = now;
         }
-        // We need a full history window to compute reliable Z-Scores
         if (state.midPriceHistory.length < CONFIG.ROLLING_WINDOW_SIZE || state.fastEma === null) {
             return null;
         }
-        // 6. Calculate Mean and Standard Deviation of the sliding window
         const sum = state.midPriceHistory.reduce((a, b) => a + b, 0);
         const mean = sum / state.midPriceHistory.length;
         const variance = state.midPriceHistory.reduce((acc, val) => acc + Math.pow(val - mean, 2), 0) / state.midPriceHistory.length;
         const stdDev = Math.sqrt(variance);
-        // Calculate Z-Score
         const zScore = stdDev > 0 ? (midPrice - mean) / stdDev : 0;
-        // Get specific configuration for this symbol
         const symbolConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === book.symbol);
         if (!symbolConfig)
             return null;
-        // Output debug indicators
-        if (CONFIG.LOG_LEVEL === 'debug') {
-            console.log(`[DEBUG] ${book.symbol} | Mid: ${midPrice.toFixed(2)} | Micro: ${microPrice.toFixed(2)} | OBI: ${obi.toFixed(2)} | Z: ${zScore.toFixed(2)} | EMA: ${state.fastEma.toFixed(2)}`);
-        }
-        // 7. Check Strategy Entry Rules
-        // Long entry conditions (Buy)
-        const hasLongImbalance = obi > symbolConfig.obiThreshold;
-        const hasLongMicroPriceDivergence = microPrice > midPrice + (symbolConfig.tickSize * 0.1);
-        const isOversold = zScore < -symbolConfig.zScoreThreshold;
-        const hasUpwardMomentum = midPrice > state.fastEma;
-        // Check AI Bias Lock Trend Safeguard
         const activeBias = this.aiBiases[book.symbol] || 'NEUTRAL';
+        // =========================================================================
+        // HYBRID QUANTITATIVE CONFIRMATION: Evaluate Fibonacci, S/R, FVG, POC zones
+        // =========================================================================
+        const indicators = this.indicatorsCache[book.symbol];
+        let isNearSupportLevel = false;
+        let isNearResistanceLevel = false;
+        let techReason = '';
+        if (indicators) {
+            const price = midPrice;
+            // A. Check Fibonacci Retracement Support/Resistance
+            if (indicators.fibonacci) {
+                const fib = indicators.fibonacci;
+                // Bullish pullback retracements (0.500, 0.618, 0.786)
+                const fibSupports = [fib.level500, fib.level618, fib.level786];
+                for (const level of fibSupports) {
+                    const diffPct = Math.abs(price - level) / level;
+                    if (diffPct <= 0.010) { // within 1.0% buffer
+                        isNearSupportLevel = true;
+                        techReason += `FibSupport(${(diffPct * 100).toFixed(1)}%) `;
+                        break;
+                    }
+                }
+                // Bearish rally retracements (0.236, 0.382, 0.500, 0.618)
+                const fibResists = [fib.level236, fib.level382, fib.level500, fib.level618];
+                for (const level of fibResists) {
+                    const diffPct = Math.abs(price - level) / level;
+                    if (diffPct <= 0.010) {
+                        isNearResistanceLevel = true;
+                        techReason += `FibResistance(${(diffPct * 100).toFixed(1)}%) `;
+                        break;
+                    }
+                }
+            }
+            // B. Check Swing Support & Resistance Lines
+            if (indicators.srLevels && indicators.srLevels.length > 0) {
+                for (const sr of indicators.srLevels) {
+                    const diffPct = Math.abs(price - sr.price) / sr.price;
+                    if (diffPct <= 0.012) { // within 1.2% buffer
+                        if (sr.type === 'SUPPORT') {
+                            isNearSupportLevel = true;
+                            techReason += `SwingSupport(${sr.strength}) `;
+                        }
+                        else if (sr.type === 'RESISTANCE') {
+                            isNearResistanceLevel = true;
+                            techReason += `SwingResistance(${sr.strength}) `;
+                        }
+                    }
+                }
+            }
+            // C. Check Fair Value Gaps (FVG) zones
+            if (indicators.fvgs && indicators.fvgs.length > 0) {
+                const unfilledFvgs = indicators.fvgs.filter(f => !f.isFilled);
+                for (const fvg of unfilledFvgs) {
+                    if (fvg.type === 'BULLISH' && price <= fvg.top && price >= fvg.bottom) {
+                        isNearSupportLevel = true;
+                        techReason += `BullishFVG `;
+                        break;
+                    }
+                    else if (fvg.type === 'BEARISH' && price >= fvg.top && price <= fvg.bottom) {
+                        isNearResistanceLevel = true;
+                        techReason += `BearishFVG `;
+                        break;
+                    }
+                }
+            }
+            // D. Check Point of Control (POC) Volume Magnet
+            if (indicators.poc) {
+                const diffPct = Math.abs(price - indicators.poc) / indicators.poc;
+                if (diffPct <= 0.008) { // within 0.8%
+                    if (activeBias === 'BULLISH') {
+                        isNearSupportLevel = true;
+                    }
+                    else if (activeBias === 'BEARISH') {
+                        isNearResistanceLevel = true;
+                    }
+                    techReason += `POCMagnet `;
+                }
+            }
+        }
+        else {
+            // Fallback: If cache not ready yet, allow entry based on pure tick conditions
+            isNearSupportLevel = true;
+            isNearResistanceLevel = true;
+            techReason = 'OBI+Z-Score Fallback ';
+        }
+        // =========================================================================
+        // EXECUTION TRIGGERS: Tick Imbalance & Momentum
+        // =========================================================================
+        // LONG Entry Conditions (Buy)
         const isBuyAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BULLISH';
-        if (hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum && isBuyAllowedByAI) {
-            const reason = `OBI(${obi.toFixed(2)}) > ${symbolConfig.obiThreshold} & Z(${zScore.toFixed(2)}) < -${symbolConfig.zScoreThreshold} & MicroPrice(${microPrice.toFixed(2)}) > Mid(${midPrice.toFixed(2)})`;
+        const hasLongImbalance = obi > state.obiThreshold;
+        const hasLongMicroPriceDivergence = microPrice > midPrice + (symbolConfig.tickSize * 0.1);
+        const isOversold = zScore < -state.zScoreThreshold;
+        const hasUpwardMomentum = midPrice > state.fastEma;
+        if (isBuyAllowedByAI && isNearSupportLevel && hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
+            if (this.macroTrends['BTC'] === 'BEARISH') {
+                return null; // Kill-switch: abort buying if BTC macro trend is bearish
+            }
+            const confidence = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5) ? 'HIGH' : 'LOW';
+            const reason = `${techReason.trim()} | OBI(${obi.toFixed(2)}) > ${state.obiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) < -${state.zScoreThreshold.toFixed(2)}`;
             return {
                 symbol: book.symbol,
                 side: 'BUY',
-                price: pAsk, // Enter at best ask price (Taker order simulated)
-                reason
+                price: pAsk,
+                reason,
+                confidence
             };
         }
-        // Short entry conditions (Sell)
-        const hasShortImbalance = obi < -symbolConfig.obiThreshold;
-        const hasShortMicroPriceDivergence = microPrice < midPrice - (symbolConfig.tickSize * 0.1);
-        const isOverbought = zScore > symbolConfig.zScoreThreshold;
-        const hasDownwardMomentum = midPrice < state.fastEma;
+        // SHORT Entry Conditions (Sell)
         const isSellAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BEARISH';
-        if (hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum && isSellAllowedByAI) {
-            const reason = `OBI(${obi.toFixed(2)}) < -${symbolConfig.obiThreshold} & Z(${zScore.toFixed(2)}) > ${symbolConfig.zScoreThreshold} & MicroPrice(${microPrice.toFixed(2)}) < Mid(${midPrice.toFixed(2)})`;
+        const hasShortImbalance = obi < -state.obiThreshold;
+        const hasShortMicroPriceDivergence = microPrice < midPrice - (symbolConfig.tickSize * 0.1);
+        const isOverbought = zScore > state.zScoreThreshold;
+        const hasDownwardMomentum = midPrice < state.fastEma;
+        if (isSellAllowedByAI && isNearResistanceLevel && hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
+            if (this.macroTrends['BTC'] === 'BULLISH') {
+                return null; // Kill-switch: abort selling if BTC macro trend is bullish
+            }
+            const confidence = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5) ? 'HIGH' : 'LOW';
+            const reason = `${techReason.trim()} | OBI(${obi.toFixed(2)}) < -${state.obiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) > ${state.zScoreThreshold.toFixed(2)}`;
             return {
                 symbol: book.symbol,
                 side: 'SELL',
-                price: pBid, // Enter at best bid price (Taker order simulated)
-                reason
+                price: pBid,
+                reason,
+                confidence
             };
         }
         return null;

@@ -14,8 +14,10 @@ const mockStats: ExecutionStats = {
   winningTrades: 7,
   losingTrades: 3,
   winRate: 70.0,
+  grossProfitUsd: 11.1547, // netProfit + totalFees
   netProfitUsd: 8.7544,
-  totalFeesUsd: 2.4003
+  totalFeesUsd: 2.4003,
+  averageHoldTimeSec: 0
 };
 
 const mockTrades: TradeRecord[] = [];

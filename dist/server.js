@@ -58,10 +58,10 @@ export class WebDashboardServer {
             ws.on('message', (message) => {
                 try {
                     const parsed = JSON.parse(message.toString());
-                    if (parsed.type === 'manual_close' && parsed.symbol) {
-                        console.log(`\x1b[35m[WEB-UI] Received manual close request for ${parsed.symbol}\x1b[0m`);
+                    if (parsed.type === 'manual_close' && parsed.symbol && parsed.modelId) {
+                        console.log(`\x1b[35m[WEB-UI] Received manual close request for model ${parsed.modelId} symbol ${parsed.symbol}\x1b[0m`);
                         if (this.onManualCloseCallback) {
-                            this.onManualCloseCallback(parsed.symbol);
+                            this.onManualCloseCallback(parsed.modelId, parsed.symbol);
                         }
                     }
                     else if (parsed.type === 'toggle_system_status') {
@@ -107,10 +107,7 @@ export class WebDashboardServer {
     broadcastUpdate(engineData) {
         this.lastUpdateData = {
             simMode: CONFIG.SIMULATION_MODE,
-            stats: engineData.stats,
-            activePositions: engineData.activePositions,
-            tradesHistory: engineData.tradesHistory,
-            aiInsights: engineData.aiInsights || {},
+            models: engineData.models,
             isTradingActive: engineData.isTradingActive
         };
         const payload = JSON.stringify({

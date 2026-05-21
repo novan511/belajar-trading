@@ -6,7 +6,8 @@ import { ExecutionEngine } from './execution.js';
 import { WebDashboardServer } from './server.js';
 import { CONFIG } from './config.js';
 import { NvidiaObserver } from './nvidia.js';
-import { GeminiObserver } from './gemini.js';
+import { calculateFibonacci, calculateFVGs, calculateSRLevels, calculatePOC } from './indicators.js';
+import { TradeMemory } from './trade_memory.js';
 
 
 // Setup file debug logging to bypass console.clear() wiping diagnostic history
@@ -31,22 +32,49 @@ process.on('unhandledRejection', (reason: any) => {
   console.error('CRITICAL UNHANDLED REJECTION:', reason);
 });
 
+// Global BTC & USDT market dominance cache
+let currentGlobalDominance = { btcDom: 54.0, usdtDom: 5.5 };
+
+async function fetchGlobalMarketDominance(): Promise<{ btcDom: number; usdtDom: number }> {
+  try {
+    logDebug('[COINGECKO] Fetching global market dominance...');
+    const response = await fetch('https://api.coingecko.com/api/v3/global', {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (response.ok) {
+      const json = await response.json() as any;
+      if (json && json.data && json.data.market_cap_percentage) {
+        const btcDom = parseFloat((json.data.market_cap_percentage.btc || 54.0).toFixed(2));
+        const usdtDom = parseFloat((json.data.market_cap_percentage.usdt || 5.5).toFixed(2));
+        logDebug(`[COINGECKO] Success! BTC Dominance: ${btcDom}%, USDT Dominance: ${usdtDom}%`);
+        return { btcDom, usdtDom };
+      }
+    } else {
+      logDebug(`[COINGECKO] HTTP Error: ${response.status} ${response.statusText}`);
+    }
+  } catch (err: any) {
+    logDebug(`[COINGECKO] Failed to fetch global dominance: ${err.message}. Using default fallback.`);
+  }
+  return { btcDom: 54.0, usdtDom: 5.5 };
+}
+
 async function main() {
   logDebug('Initializing Multi-Model HFT Bot...');
 
   // 1. Initialize core system components
   const exchange = new ExchangeConnector();
   const nvidiaObserver = new NvidiaObserver();
-const geminiObserver = new GeminiObserver();
 
   // Create strategy manager and execution engine instances for each configured model
   const models: Record<string, { strategy: StrategyManager; execution: ExecutionEngine }> = {};
   const latestAiInsights: Record<string, any> = {};
 
   for (const modelId of Object.keys(CONFIG.MODELS)) {
+    const tradeMemory = new TradeMemory(modelId);
     models[modelId] = {
       strategy: new StrategyManager(),
-      execution: new ExecutionEngine(modelId, exchange)
+      execution: new ExecutionEngine(modelId, exchange, tradeMemory)
     };
     latestAiInsights[modelId] = {};
   }
@@ -107,7 +135,9 @@ const geminiObserver = new GeminiObserver();
 
     dashboardServer.broadcastUpdate({
       models: payload,
-      isTradingActive
+      isTradingActive,
+      globalDominance: currentGlobalDominance,
+      simMode: CONFIG.SIMULATION_MODE
     });
   };
 
@@ -290,8 +320,12 @@ const geminiObserver = new GeminiObserver();
   const runParameterOptimization = async () => {
     logDebug('Triggering dynamic AI parameter optimization for all active models...');
     const activeSymbols = Object.keys(CONFIG.SYMBOLS);
-    const timeframes = ['5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M'];
+    const timeframes = ['5m', '15m', '30m', '1h', '4h'];
     const candleData: Record<string, Record<string, any[]>> = {};
+
+    logDebug('Fetching global market dominance stats from CoinGecko...');
+    const dominance = await fetchGlobalMarketDominance();
+    currentGlobalDominance = dominance;
 
     logDebug('Fetching multi-timeframe candles from Hyperliquid in parallel...');
     
@@ -305,7 +339,7 @@ const geminiObserver = new GeminiObserver();
       for (const symbol of activeSymbols) {
         for (const tf of timeframes) {
           fetchPromises.push(
-            exchange.getCandleSnapshot(symbol, tf, 10).then(candles => {
+            exchange.getCandleSnapshot(symbol, tf, 100).then(candles => {
               candleData[symbol][tf] = candles;
             }).catch(err => {
               logDebug(`Error fetching candles for ${symbol} (${tf}): ${err.message}`);
@@ -318,6 +352,25 @@ const geminiObserver = new GeminiObserver();
       logDebug('Successfully fetched all multi-timeframe candles.');
     } catch (err: any) {
       logDebug(`Error during parallel candle fetching: ${err.message}`);
+    }
+
+    // Calculate premium indicators using indicators.ts
+    const calculatedIndicators: Record<string, { fibonacci: any; fvgs: any[]; srLevels: any[]; poc: number }> = {};
+    for (const symbol of activeSymbols) {
+      const h1Candles = candleData[symbol]['1h'] || [];
+      if (h1Candles.length > 0) {
+        const fibonacci = calculateFibonacci(h1Candles);
+        const fvgs = calculateFVGs(h1Candles);
+        const srLevels = calculateSRLevels(h1Candles, 5, 0.012);
+        const poc = calculatePOC(h1Candles, 20);
+        
+        calculatedIndicators[symbol] = { fibonacci, fvgs, srLevels, poc };
+        
+        // Cache calculated indicators inside StrategyManager for each active model
+        for (const model of Object.values(models)) {
+          model.strategy.setCalculatedIndicators(symbol, calculatedIndicators[symbol]);
+        }
+      }
     }
 
     // Run optimization for each AI-configured model in CONFIG.MODELS in parallel
@@ -334,26 +387,16 @@ const geminiObserver = new GeminiObserver();
         logDebug(`[AI OPTIMIZER] [${modelId}] Calling NVIDIA API for model tag: ${modelConf.modelTag}`);
         const currentParams = model.strategy.getAllParams();
 
-        let optimized = null;
-        if (modelConf.modelTag === 'gemini-pro') {
-          optimized = await geminiObserver.optimizeParameters(
-            model.execution.getStats(),
-            model.execution.getTradesHistory(),
-            activeSymbols,
-            candleData,
-            modelConf.modelTag,
-            currentParams
-          );
-        } else {
-          optimized = await nvidiaObserver.optimizeParameters(
-            model.execution.getStats(),
-            model.execution.getTradesHistory(),
-            activeSymbols,
-            candleData,
-            modelConf.modelTag,
-            currentParams
-          );
-        }
+        const optimized = await nvidiaObserver.optimizeParameters(
+          model.execution.getStats(),
+          model.execution.getTradesHistory(),
+          activeSymbols,
+          candleData,
+          modelConf.modelTag,
+          currentParams,
+          calculatedIndicators,
+          dominance
+        );
 
         if (optimized && optimized.parameters) {
           logDebug(`[AI OPTIMIZER] [${modelId}] Received parameters shift: ${JSON.stringify(optimized.parameters)}`);
