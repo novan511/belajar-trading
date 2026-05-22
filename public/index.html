@@ -922,20 +922,13 @@
     let currentModelId = 'Llama_8B';
 
     const modelConfigs = {
-<<<<<<< HEAD
-  Llama_8B: { label: 'Llama 3.1 8B (AI)', color: '#00f2fe' },
-  Nemotron_70B: { label: 'Nemotron 70B (AI)', color: '#ffd600' },
-  Mistral_Large: { label: 'Mistral Large (AI)', color: '#a000ff' },
-  Llama_70B: { label: 'Llama 3.1 70B (AI)', color: '#00ff87' },
-  Static_Base: { label: 'Static Base (Control)', color: '#ff2a5f' },
-  Gemini_Pro: { label: 'Gemini Pro (AI)', color: '#ff7f00' }
-};
-
-
-=======
-      Llama_8B: { label: 'Llama 3.1 8B Premium Quant Strategy', color: '#00f2fe' }
+      Llama_8B: { label: 'Llama 3.1 8B (AI)', color: '#00f2fe' },
+      Nemotron_70B: { label: 'Nemotron 70B (AI)', color: '#ffd600' },
+      Mistral_Large: { label: 'Mistral Large (AI)', color: '#a000ff' },
+      Llama_70B: { label: 'Llama 3.1 70B (AI)', color: '#00ff87' },
+      Static_Base: { label: 'Static Base (Control)', color: '#ff2a5f' },
+      Gemini_Pro: { label: 'Gemini Pro (AI)', color: '#ff7f00' }
     };
->>>>>>> 9b5ce032e3912accee19d097ca5f667620741578
 
     const flowLed = document.getElementById('flow-led');
     const ticksCount = document.getElementById('ticks-count');
@@ -1399,9 +1392,25 @@
               </div>
             </div>
             
-            <div class="ai-rationale">
-              "${rationaleVal}"
+            <div class="ai-rationale" style="margin-bottom: 8px;">
+              <strong>Rasional:</strong> "${rationaleVal}"
             </div>
+            ${insight.current_thoughts ? `
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
+              <strong>Thinking:</strong> ${insight.current_thoughts}
+            </div>` : ''}
+            ${insight.planned_action ? `
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
+              <strong>Action:</strong> ${insight.planned_action}
+            </div>` : ''}
+            ${insight.waiting_for ? `
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
+              <strong>Waiting:</strong> ${insight.waiting_for}
+            </div>` : ''}
+            ${insight.post_algorithm_thoughts ? `
+            <div style="font-size: 11px; color: var(--text-muted); padding-left: 6px; border-left: 2px solid ${modelColor};">
+              <strong>Post-Algo:</strong> ${insight.post_algorithm_thoughts}
+            </div>` : ''}
           `;
           aiContainer.appendChild(card);
         });

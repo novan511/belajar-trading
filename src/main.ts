@@ -399,7 +399,7 @@ async function main() {
         );
 
         if (optimized && optimized.parameters) {
-          logDebug(`[AI OPTIMIZER] [${modelId}] Received parameters shift: ${JSON.stringify(optimized.parameters)}`);
+          logDebug(`[AI OPTIMIZER] [${modelId}] Received parameters shift: ${JSON.stringify(optimized.parameters)}\nAnalysis: ${JSON.stringify(optimized.analysis)}`);
           
           latestAiInsights[modelId] = optimized.analysis || {};
           model.strategy.setAiBiases(latestAiInsights[modelId]);
