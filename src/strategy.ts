@@ -1,10 +1,14 @@
 import { CONFIG } from './config.js';
-import { OrderBook, Side, TradeSignal } from './types.js';
+import { OrderBook, Side, TradeSignal, MarketRegime } from './types.js';
+import { MarketMicrostructure } from './market_microstructure.js';
+import { MarketRegimeDetector } from './market_regime.js';
+import { PairsTrader } from './pairs_trading.js';
 
 interface SymbolState {
   symbol: string;
   midPriceHistory: number[];
   fastEma: number | null;
+  slowEma: number | null;
   lastTickTime: number;
   lastHistoryTime: number;
   obiThreshold: number;
@@ -18,6 +22,11 @@ export class StrategyManager {
   private aiBiases: Record<string, 'BULLISH' | 'BEARISH' | 'NEUTRAL'> = {};
   private macroTrends: Record<string, 'BULLISH' | 'BEARISH' | 'NEUTRAL'> = {};
   private indicatorsCache: Record<string, { fibonacci: any; fvgs: any[]; srLevels: any[]; poc: number }> = {};
+  
+  // NEW: Advanced modules
+  public marketMicro: MarketMicrostructure;
+  public marketRegime: MarketRegimeDetector;
+  public pairsTrader: PairsTrader;
 
   public setAiBiases(biases: Record<string, any>) {
     this.aiBiases = {};
@@ -40,12 +49,18 @@ export class StrategyManager {
   }
 
   constructor() {
+    // NEW: Initialize advanced modules
+    this.marketMicro = new MarketMicrostructure();
+    this.marketRegime = new MarketRegimeDetector();
+    this.pairsTrader = new PairsTrader();
+
     // Initialize states for configured symbols
     for (const [key, symbolConfig] of Object.entries(CONFIG.SYMBOLS)) {
       this.states.set(symbolConfig.name, {
         symbol: symbolConfig.name,
         midPriceHistory: [],
         fastEma: null,
+        slowEma: null,
         lastTickTime: 0,
         lastHistoryTime: 0,
         obiThreshold: symbolConfig.obiThreshold,
@@ -103,6 +118,13 @@ export class StrategyManager {
    * Process a new OrderBook tick and check for high-probability signals.
    * Leverages a premium hybrid model: candle quantitative levels act as confirmation zones,
    * while micro-imbalances (OBI & Z-score) trigger precise execution.
+   * 
+   * NEW ENHANCEMENTS:
+   * - Market regime detection
+   * - Liquidity sweep detection
+   * - CVD divergence confirmation
+   * - OBI trend momentum
+   * - VWAP proximity filter
    */
   public processTick(book: OrderBook): TradeSignal | null {
     const state = this.states.get(book.symbol);
@@ -134,6 +156,38 @@ export class StrategyManager {
     const microPrice = (pBid * vAsk + pAsk * vBid) / totalVolume;
     const obi = (vBid - vAsk) / totalVolume;
 
+    // ================================================================
+    // NEW: Update advanced modules with current tick data
+    // ================================================================
+    this.marketMicro.processTick(book);
+    this.marketRegime.processPrice(book.symbol, midPrice);
+    this.pairsTrader.updatePrice(book.symbol, midPrice);
+
+    // Check market regime
+    const regime = this.marketRegime.detectRegime(book.symbol);
+    const trendDirection = this.marketRegime.getTrendDirection(book.symbol);
+
+    // Check liquidity sweep (high probability entry)
+    const sweepSignal = this.marketMicro.detectLiquiditySweep(book.symbol, pBid, pAsk);
+    if (sweepSignal) {
+      // Liquidity sweep detected! This is a potential reversal entry
+      // We'll still check other conditions but prioritize sweep signals
+    }
+
+    // Check CVD divergence
+    const cvdDivergence = this.marketMicro.checkCVDDivergence(book.symbol);
+
+    // Check OBI trend (accumulating or distributing?)
+    const obiTrend = this.marketMicro.getOBITrend(book.symbol);
+
+    // Get VWAP
+    const vwapData = this.marketMicro.getVWAP(book.symbol);
+
+    // Get Volume Profile
+    const volProfile = this.marketMicro.getVolumeProfile(book.symbol);
+
+    // ================================================================
+
     // Decoupled Baseline: Update rolling window history & EMA
     if (now - state.lastHistoryTime >= 1000 || state.midPriceHistory.length === 0) {
       state.midPriceHistory.push(midPrice);
@@ -147,6 +201,15 @@ export class StrategyManager {
         state.fastEma = midPrice;
       } else {
         state.fastEma = midPrice * k + state.fastEma * (1 - k);
+      }
+
+      // NEW: Slow EMA for trend confirmation (3x period)
+      const slowPeriod = CONFIG.EMA_FAST_PERIOD * 3;
+      const slowK = 2 / (slowPeriod + 1);
+      if (state.slowEma === null) {
+        state.slowEma = midPrice;
+      } else {
+        state.slowEma = midPrice * slowK + state.slowEma * (1 - slowK);
       }
 
       state.lastHistoryTime = now;
@@ -183,18 +246,16 @@ export class StrategyManager {
       // A. Check Fibonacci Retracement Support/Resistance
       if (indicators.fibonacci) {
         const fib = indicators.fibonacci;
-        // Bullish pullback retracements (0.500, 0.618, 0.786)
         const fibSupports = [fib.level500, fib.level618, fib.level786];
         for (const level of fibSupports) {
           const diffPct = Math.abs(price - level) / level;
-          if (diffPct <= 0.010) { // within 1.0% buffer
+          if (diffPct <= 0.010) {
             isNearSupportLevel = true;
             techReason += `FibSupport(${(diffPct * 100).toFixed(1)}%) `;
             break;
           }
         }
         
-        // Bearish rally retracements (0.236, 0.382, 0.500, 0.618)
         const fibResists = [fib.level236, fib.level382, fib.level500, fib.level618];
         for (const level of fibResists) {
           const diffPct = Math.abs(price - level) / level;
@@ -210,7 +271,7 @@ export class StrategyManager {
       if (indicators.srLevels && indicators.srLevels.length > 0) {
         for (const sr of indicators.srLevels) {
           const diffPct = Math.abs(price - sr.price) / sr.price;
-          if (diffPct <= 0.012) { // within 1.2% buffer
+          if (diffPct <= 0.012) {
             if (sr.type === 'SUPPORT') {
               isNearSupportLevel = true;
               techReason += `SwingSupport(${sr.strength}) `;
@@ -241,20 +302,50 @@ export class StrategyManager {
       // D. Check Point of Control (POC) Volume Magnet
       if (indicators.poc) {
         const diffPct = Math.abs(price - indicators.poc) / indicators.poc;
-        if (diffPct <= 0.008) { // within 0.8%
-          if (activeBias === 'BULLISH') {
-            isNearSupportLevel = true;
-          } else if (activeBias === 'BEARISH') {
-            isNearResistanceLevel = true;
-          }
+        if (diffPct <= 0.008) {
+          if (activeBias === 'BULLISH') isNearSupportLevel = true;
+          else if (activeBias === 'BEARISH') isNearResistanceLevel = true;
           techReason += `POCMagnet `;
         }
       }
     } else {
-      // Fallback: If cache not ready yet, allow entry based on pure tick conditions
       isNearSupportLevel = true;
       isNearResistanceLevel = true;
       techReason = 'OBI+Z-Score Fallback ';
+    }
+
+    // =========================================================================
+    // NEW: VWAP Confirmation
+    // =========================================================================
+    let isAboveVWAP = true;
+    let isBelowVWAP = false;
+    if (vwapData) {
+      isAboveVWAP = midPrice > vwapData.price;
+      isBelowVWAP = midPrice < vwapData.price;
+    }
+
+    // =========================================================================
+    // NEW: Volume Profile Confirmation
+    // =========================================================================
+    let isInValueArea = true;
+    if (volProfile) {
+      isInValueArea = midPrice >= volProfile.val && midPrice <= volProfile.vah;
+    }
+
+    // =========================================================================
+    // NEW: Regime-Based Adjustments
+    // =========================================================================
+    let adjustedObiThreshold = state.obiThreshold;
+    let adjustedZScoreThreshold = state.zScoreThreshold;
+
+    if (regime === 'HIGH_VOLATILITY') {
+      // Loosen thresholds in high vol (wider range)
+      adjustedObiThreshold *= 1.2;
+      adjustedZScoreThreshold *= 1.3;
+    } else if (regime === 'LOW_VOLATILITY') {
+      // Tighten thresholds in low vol (smaller moves)
+      adjustedObiThreshold *= 0.8;
+      adjustedZScoreThreshold *= 0.7;
     }
 
     // =========================================================================
@@ -263,18 +354,43 @@ export class StrategyManager {
 
     // LONG Entry Conditions (Buy)
     const isBuyAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BULLISH';
-    const hasLongImbalance = obi > state.obiThreshold;
+    const hasLongImbalance = obi > adjustedObiThreshold;
     const hasLongMicroPriceDivergence = microPrice > midPrice + (symbolConfig.tickSize * 0.1);
-    const isOversold = zScore < -state.zScoreThreshold;
+    const isOversold = zScore < -adjustedZScoreThreshold;
     const hasUpwardMomentum = midPrice > state.fastEma;
+    
+    // NEW: Additional long confirmations
+    const hasBullishRegime = regime === 'TRENDING_BULL' || regime === 'RANGING';
+    const hasBullishOBITrend = obiTrend === 'ACCUMULATING';
+    const hasBullishCVD = cvdDivergence === 'BULLISH';
+    const hasSweepBuy = sweepSignal?.side === 'BUY';
+    const isBelowVWAPForLong = isBelowVWAP; // Buying below VWAP is favorable
+    const slowEmaAboveFast = state.slowEma !== null && state.fastEma !== null && state.fastEma > state.slowEma;
+
+    let longConfirmations = 0;
+    if (hasBullishRegime) longConfirmations++;
+    if (hasBullishOBITrend) longConfirmations++;
+    if (hasBullishCVD) longConfirmations += 2; // CVD divergence is strong signal
+    if (hasSweepBuy) longConfirmations += 2; // Liquidity sweep is strong signal
+    if (isBelowVWAPForLong) longConfirmations++;
+    if (slowEmaAboveFast) longConfirmations++;
+    if (isInValueArea) longConfirmations++;
 
     if (isBuyAllowedByAI && isNearSupportLevel && hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
+      // NEW: Require minimum confirmations
+      if (longConfirmations < 2) return null;
+
       if (this.macroTrends['BTC'] === 'BEARISH') {
-        return null; // Kill-switch: abort buying if BTC macro trend is bearish
+        return null;
       }
       
-      const confidence: 'HIGH' | 'LOW' = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5) ? 'HIGH' : 'LOW';
-      const reason = `${techReason.trim()} | OBI(${obi.toFixed(2)}) > ${state.obiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) < -${state.zScoreThreshold.toFixed(2)}`;
+      const confidence: 'HIGH' | 'LOW' = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5 && longConfirmations >= 4) ? 'HIGH' : 'LOW';
+      
+      let reason = `${techReason.trim()}`;
+      if (hasSweepBuy) reason = `[LIQUIDITY SWEEP] ${reason}`;
+      if (hasBullishCVD) reason = `[CVD DIVERGENCE] ${reason}`;
+      reason += ` | OBI(${obi.toFixed(2)}) > ${adjustedObiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) < -${adjustedZScoreThreshold.toFixed(2)}`;
+      reason += ` | Regime: ${regime}`;
       
       return {
         symbol: book.symbol,
@@ -287,18 +403,42 @@ export class StrategyManager {
 
     // SHORT Entry Conditions (Sell)
     const isSellAllowedByAI = activeBias === 'NEUTRAL' || activeBias === 'BEARISH';
-    const hasShortImbalance = obi < -state.obiThreshold;
+    const hasShortImbalance = obi < -adjustedObiThreshold;
     const hasShortMicroPriceDivergence = microPrice < midPrice - (symbolConfig.tickSize * 0.1);
-    const isOverbought = zScore > state.zScoreThreshold;
+    const isOverbought = zScore > adjustedZScoreThreshold;
     const hasDownwardMomentum = midPrice < state.fastEma;
 
+    // NEW: Additional short confirmations
+    const hasBearishRegime = regime === 'TRENDING_BEAR' || regime === 'RANGING';
+    const hasBearishOBITrend = obiTrend === 'DISTRIBUTING';
+    const hasBearishCVD = cvdDivergence === 'BEARISH';
+    const hasSweepSell = sweepSignal?.side === 'SELL';
+    const isAboveVWAPForShort = isAboveVWAP;
+    const slowEmaBelowFast = state.slowEma !== null && state.fastEma !== null && state.fastEma < state.slowEma;
+
+    let shortConfirmations = 0;
+    if (hasBearishRegime) shortConfirmations++;
+    if (hasBearishOBITrend) shortConfirmations++;
+    if (hasBearishCVD) shortConfirmations += 2;
+    if (hasSweepSell) shortConfirmations += 2;
+    if (isAboveVWAPForShort) shortConfirmations++;
+    if (slowEmaBelowFast) shortConfirmations++;
+    if (isInValueArea) shortConfirmations++;
+
     if (isSellAllowedByAI && isNearResistanceLevel && hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
+      if (longConfirmations < 2) return null;
+
       if (this.macroTrends['BTC'] === 'BULLISH') {
-        return null; // Kill-switch: abort selling if BTC macro trend is bullish
+        return null;
       }
       
-      const confidence: 'HIGH' | 'LOW' = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5) ? 'HIGH' : 'LOW';
-      const reason = `${techReason.trim()} | OBI(${obi.toFixed(2)}) < -${state.obiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) > ${state.zScoreThreshold.toFixed(2)}`;
+      const confidence: 'HIGH' | 'LOW' = (Math.abs(obi) > state.obiThreshold * 1.5 && Math.abs(zScore) > state.zScoreThreshold * 1.5 && shortConfirmations >= 4) ? 'HIGH' : 'LOW';
+      
+      let reason = `${techReason.trim()}`;
+      if (hasSweepSell) reason = `[LIQUIDITY SWEEP] ${reason}`;
+      if (hasBearishCVD) reason = `[CVD DIVERGENCE] ${reason}`;
+      reason += ` | OBI(${obi.toFixed(2)}) < -${adjustedObiThreshold.toFixed(2)} & Z(${zScore.toFixed(2)}) > ${adjustedZScoreThreshold.toFixed(2)}`;
+      reason += ` | Regime: ${regime}`;
       
       return {
         symbol: book.symbol,

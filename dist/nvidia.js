@@ -81,7 +81,11 @@ REQUIRED JSON SCHEMA:
     "SYMBOL": { 
       "bias": "BULLISH" | "BEARISH" | "NEUTRAL", 
       "confidence": number, 
-      "rationale": "Provide a very concise quantitative rationale in INDONESIAN explaining the trend and key indicator levels (e.g., 'Mantul dari Fib 0.618 & Support kuat, FVG bullish terisi. Bias BULLISH, R:R 1:3 locked'). Keep it under 20 words." 
+      "rationale": "Provide a very concise quantitative rationale in INDONESIAN explaining the trend and key indicator levels. Keep it under 20 words.",
+      "current_thoughts": "Apa yang sedang dipikirkan AI saat ini berdasarkan data market (dalam Bahasa Indonesia)",
+      "planned_action": "Apa yang akan dan mau dilakukan AI selanjutnya (contoh: cari entry long, hold, dsb)",
+      "waiting_for": "Apa kondisi yang sedang ditunggu (contoh: pullback ke fib 0.618, volume spike, dsb)",
+      "post_algorithm_thoughts": "Apa yang dipikirkan AI setelah mengevaluasi algoritma dan hasil parameter yang baru"
     }
   }
 }
@@ -92,7 +96,15 @@ Example Response:
     "BTC": { "obiThreshold": 0.22, "zScoreThreshold": 0.85, "takeProfitPct": 0.0150, "stopLossPct": 0.0050 }
   },
   "analysis": {
-    "BTC": { "bias": "BULLISH", "confidence": 90, "rationale": "Pantulan di Fib 0.618 dan Support $77K divalidasi. Konfirmasi FVG bullish, bias BULLISH dengan R:R 1:3 optimal." }
+    "BTC": { 
+      "bias": "BULLISH", 
+      "confidence": 90, 
+      "rationale": "Pantulan di Fib 0.618 dan Support $77K divalidasi.",
+      "current_thoughts": "Momentum sedang kuat ke atas, indikator teknikal menunjukan dominasi buyer di zona ini.",
+      "planned_action": "Mempersiapkan eksekusi LONG jika ada sedikit koreksi di timeframe kecil.",
+      "waiting_for": "Tunggu FVG bullish 5m terisi sebagai konfirmasi entry optimal.",
+      "post_algorithm_thoughts": "Parameter R:R 1:3 sudah dilock, risiko terjaga, siap menangkap pergerakan naik selanjutnya."
+    }
   }
 }`;
         // Build a long-term summary per symbol from the entire trade history

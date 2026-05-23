@@ -2,6 +2,7 @@ import { CONFIG } from './config.js';
 import { TradeMemory } from './trade_memory.js';
 import { Side, TradeSignal, Position, TradeRecord, ExecutionStats } from './types.js';
 import { ExchangeConnector } from './exchange.js';
+import { RiskManager } from './risk_manager.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -9,6 +10,9 @@ export class ExecutionEngine {
   private activePositions: Map<string, Position[]> = new Map(); // Key is symbol, value is array of positions
   private tradesHistory: TradeRecord[] = [];
   private exchange: ExchangeConnector;
+
+  // NEW: Risk Manager instance
+  public riskManager: RiskManager;
 
   // Track Stats
   private stats: ExecutionStats = {
@@ -30,6 +34,7 @@ export class ExecutionEngine {
     this.modelId = modelId;
     this.exchange = exchange;
     this.tradeMemory = tradeMemory;
+    this.riskManager = new RiskManager(); // NEW
     this.loadTradesArchive();
   }
 
@@ -224,21 +229,31 @@ export class ExecutionEngine {
 
   /**
    * Triggers entry for a new signal
+   * NEW ENHANCEMENTS:
+   * - RiskManager check (daily drawdown, session filter)
+   * - Kelly + ATR-based position sizing
+   * - Partial take-profit levels (scale out)
    */
   public async executeSignal(signal: TradeSignal) {
+    // NEW: Check risk manager is OK
+    if (!this.riskManager.isTradingAllowed()) {
+      console.log(`\x1b[33m[RISK] Trading paused by RiskManager. Skipping ${signal.symbol} ${signal.side} signal.\x1b[0m`);
+      return;
+    }
+
     const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === signal.symbol);
     if (!coinConfig) return;
 
     // Evaluate spacing & time cooldown rules for existing positions on this coin
     const activeForCoin = this.activePositions.get(signal.symbol) || [];
     if (activeForCoin.length > 0) {
-      // 1. Time Cooldown check (minimum spacing of 15 seconds)
+      // 1. Time Cooldown check (minimum spacing)
       const lastPos = activeForCoin[activeForCoin.length - 1];
       if (Date.now() - lastPos.entryTime < CONFIG.ENTRY_COOLDOWN_SEC * 1000) {
         return; // Skip signal inside cooldown
       }
 
-      // 2. Price Spacing check (minimum spacing of 0.5% from all current active position entry prices)
+      // 2. Price Spacing check (minimum spacing)
       const currentEntryPrice = signal.price;
       for (const p of activeForCoin) {
         const priceDiffPct = Math.abs(currentEntryPrice - p.entryPrice) / p.entryPrice;
@@ -248,15 +263,9 @@ export class ExecutionEngine {
       }
     }
 
-      // Determine trade size based on confidence level
-      const baseSize = coinConfig.tradeSizeUsd;
-      const tradeSize = signal.confidence === 'LOW' ? baseSize * 0.3 : baseSize;
-      const entryPrice = signal.price;
-      const quantity = parseFloat((tradeSize / entryPrice).toFixed(this.getLotDecimalPlaces(coinConfig.lotSize)));
+    const entryPrice = signal.price;
 
-    if (quantity <= 0) return;
-
-    // Trailing Stop & Take Profit configurations
+    // Calculate stop & take profit prices
     let stopLossPrice = 0;
     let takeProfitPrice = 0;
     if (signal.side === 'BUY') {
@@ -267,12 +276,28 @@ export class ExecutionEngine {
       takeProfitPrice = entryPrice * (1 - coinConfig.takeProfitPct);
     }
 
-    console.log(`\x1b[36m[SIGNAL ENTRY] ${signal.symbol} | ${signal.side} at ${this.formatPrice(signal.symbol, entryPrice)} | size: $${tradeSize} | SL: ${this.formatPrice(signal.symbol, stopLossPrice)} | TP: ${this.formatPrice(signal.symbol, takeProfitPrice)}\x1b[0m`);
+    // NEW: Dynamic position sizing using RiskManager (Kelly + ATR)
+    const atr = 0; // Will be populated if available from MarketRegime via strategy
+    const quantity = this.riskManager.calculatePositionSize(
+      this.stats,
+      signal.symbol,
+      atr,
+      entryPrice,
+      stopLossPrice,
+      signal.confidence
+    );
+
+    if (quantity <= 0) return;
+
+    console.log(`\x1b[36m[SIGNAL ENTRY] ${signal.symbol} | ${signal.side} at ${this.formatPrice(signal.symbol, entryPrice)} | qty: ${quantity.toFixed(6)} | SL: ${this.formatPrice(signal.symbol, stopLossPrice)} | TP: ${this.formatPrice(signal.symbol, takeProfitPrice)}\x1b[0m`);
     
     if (CONFIG.SIMULATION_MODE) {
       const order = await this.exchange.submitSimulatedOrder(signal.symbol, signal.side, entryPrice, quantity);
       
       if (order.success) {
+        // NEW: Setup partial take-profit levels (scale out)
+        const partialTPs = this.createPartialTPLevels(signal.side, entryPrice, takeProfitPrice);
+
         const position: Position = {
           id: order.orderId,
           symbol: signal.symbol,
@@ -282,17 +307,19 @@ export class ExecutionEngine {
           entryTime: Date.now(),
           takeProfitPrice,
           stopLossPrice,
-          highestPrice: order.executedPrice, // Initialize peak bid to entry price
-          lowestPrice: order.executedPrice,   // Initialize trough ask to entry price
+          highestPrice: order.executedPrice,
+          lowestPrice: order.executedPrice,
           entryReason: signal.reason,
-          modelId: this.modelId
+          modelId: this.modelId,
+          partialTPs,
+          remainingQty: quantity
         };
 
         const existingList = this.activePositions.get(signal.symbol) || [];
         existingList.push(position);
         this.activePositions.set(signal.symbol, existingList);
 
-        this.stats.totalFeesUsd += order.feeUsd; // Add entry fee
+        this.stats.totalFeesUsd += order.feeUsd;
       }
     } else {
       try {
@@ -301,6 +328,30 @@ export class ExecutionEngine {
         console.error(`[EXECUTION ERROR] Live entry failed:`, err.message);
       }
     }
+  }
+
+  /**
+   * NEW: Creates partial take-profit levels for scaling out
+   * TP1: Close 30% of position at original TP
+   * TP2: Close 30% of position at 1.5x original TP
+   * TP3: Let remaining 40% run with trailing stop
+   */
+  private createPartialTPLevels(side: Side, entryPrice: number, baseTP: number): { pct: number; targetPx: number; isTriggered: boolean }[] {
+    const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === side);
+    const tpRange = Math.abs(baseTP - entryPrice);
+    
+    return [
+      {
+        pct: CONFIG.TP1_PCT,
+        targetPx: side === 'BUY' ? entryPrice + tpRange : entryPrice - tpRange,
+        isTriggered: false
+      },
+      {
+        pct: CONFIG.TP2_PCT,
+        targetPx: side === 'BUY' ? entryPrice + tpRange * 1.5 : entryPrice - tpRange * 1.5,
+        isTriggered: false
+      }
+    ];
   }
 
   /**
@@ -313,6 +364,41 @@ export class ExecutionEngine {
     // Close all positions for this symbol
     for (const pos of [...positions]) {
       this.closePosition(pos, exitPrice, reason);
+    }
+  }
+
+  /**
+   * Check if partial take-profit levels have been hit and scale out
+   */
+  private checkPartialTPs(position: Position, currentBid: number, currentAsk: number) {
+    if (!position.partialTPs || position.partialTPs.every(tp => tp.isTriggered)) return;
+    
+    const currentPrice = position.side === 'BUY' ? currentBid : currentAsk;
+
+    for (const tp of position.partialTPs) {
+      if (tp.isTriggered) continue;
+
+      const hitTarget = position.side === 'BUY' 
+        ? currentPrice >= tp.targetPx
+        : currentPrice <= tp.targetPx;
+
+      if (hitTarget) {
+        tp.isTriggered = true;
+        const closeQty = position.quantity * tp.pct;
+        
+        if (closeQty > 0 && position.remainingQty && position.remainingQty >= closeQty) {
+          const grossProfit = position.side === 'BUY'
+            ? (currentPrice - position.entryPrice) * closeQty
+            : (position.entryPrice - currentPrice) * closeQty;
+          
+          const fees = currentPrice * closeQty * CONFIG.MAKER_FEE_PCT;
+          const netProfit = grossProfit - fees;
+          
+          position.remainingQty -= closeQty;
+          
+          console.log(`\x1b[36m[PARTIAL TP] ${position.symbol} | ${position.side} | TP hit at ${this.formatPrice(position.symbol, currentPrice)} | Closed ${(tp.pct * 100).toFixed(0)}% | Net: $${netProfit.toFixed(4)}\x1b[0m`);
+        }
+      }
     }
   }
 
@@ -383,6 +469,9 @@ export class ExecutionEngine {
     if (this.tradeMemory) {
       this.tradeMemory.add(record);
     }
+
+    // NEW: Update RiskManager
+    this.riskManager.updateBalance(netProfit, position.symbol, result);
     
     // Remove individual position from array in Map
     const existingList = this.activePositions.get(position.symbol) || [];

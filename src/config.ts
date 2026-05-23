@@ -130,6 +130,65 @@ export const CONFIG = {
   CUMULATIVE_DRAWDOWN_LIMIT_PCT: 0.020, // Max cumulative loss per coin (2.0%)
   RUNAWAY_TRAILING_SL_MULTIPLIER: 0.30, // Extremely tight trailing SL multiplier once TP breached (30% of stopLossPct)
 
+  // ============================================================
+  // NEW: ADVANCED RISK MANAGEMENT & STRATEGY ENHANCEMENTS
+  // ============================================================
+
+  // --- Risk Management ---
+  DAILY_DRAWDOWN_LIMIT_PCT: 0.05,      // Max -5% total portfolio drawdown per day -> auto pause
+  MAX_POSITION_RISK_PCT: 0.01,         // Max risk per trade = 1% of capital
+  ACCOUNT_BALANCE_USD: 10000,          // Estimated account balance for Kelly sizing
+
+  // --- Partial Take Profit (Scale Out) ---
+  TP1_PCT: 0.30,                        // Close 30% at TP1
+  TP2_PCT: 0.30,                        // Close 30% at TP2
+  TP3_TRAIL_PCT: 0.40,                  // Let 40% run with trailing
+
+  // --- Volatility-Based Sizing ---
+  ATR_PERIOD: 14,                       // ATR calculation period
+  ATR_MULTIPLIER_MIN: 0.5,              // Min position size multiplier (low vol)
+  ATR_MULTIPLIER_MAX: 1.5,              // Max position size multiplier (high vol)
+  BASE_RISK_PER_TRADE_USD: 100,         // Base risk amount per trade
+
+  // --- Kelly Criterion ---
+  KELLY_FRACTION: 0.25,                 // Use 25% Kelly (conservative) to avoid overbetting
+
+  // --- Time-Based Filtering ---
+  // Trading sessions that overlap with high liquidity (UTC)
+  TRADING_SESSION_START_HOUR_UTC: 1,    // 01:00 UTC (Asian session overlap)
+  TRADING_SESSION_END_HOUR_UTC: 21,     // 21:00 UTC (US session close)
+
+  // --- Liquidity Sweep Detection ---
+  LIQUIDITY_SWEEP_WINDOW_TICKS: 50,     // Lookback for sweep pattern
+  SWEEP_BODY_THRESHOLD_PCT: 0.001,      // 0.1% wick threshold for sweep detection
+
+  // --- Regime Detection (HMM-inspired adaptive) ---
+  REGIME_LOOKBACK_CANDLES: 50,          // Candles for trend strength calc
+  REGIME_EMA_PERIOD: 20,                // For trend vs ranging detection
+  REGIME_TREND_STRENGTH_THRESHOLD: 0.3, // ADX-like threshold
+
+  // --- Market Microstructure ---
+  OFI_WINDOW_TICKS: 10,                 // Order Flow Imbalance window
+  CVD_WINDOW_TICKS: 20,                 // Cumulative Volume Delta window
+
+  // --- VWAP & Volume Profile ---
+  VWAP_PERIOD_CANDLES: 24,              // 24-hour VWAP
+  VALUE_AREA_PCT: 0.70,                 // 70% Value Area
+
+  // --- Pairs Trading / Statistical Arbitrage ---
+  PAIRS_ZSCORE_ENTRY: 2.0,              // Entry when z-score > 2.0
+  PAIRS_ZSCORE_EXIT: 0.5,               // Exit when z-score < 0.5
+  PAIRS_LOOKBACK_PERIODS: 100,          // Correlation lookback
+  TRADABLE_PAIRS: [
+    ['BTC', 'ETH'],
+    ['BTC', 'SOL'],
+    ['ETH', 'SOL'],
+    ['SOL', 'SUI'],
+  ],
+
+  // --- Performance Attribution ---
+  PERFORMANCE_TRACKING_ENABLED: true,
+
   // Hyperliquid Fee Rates
   MAKER_FEE_PCT: 0.0001,     // Hyperliquid Maker Fee (0.01%)
   TAKER_FEE_PCT: 0.0003,     // Hyperliquid Retail Taker Fee (0.03%)

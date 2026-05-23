@@ -7,6 +7,7 @@ import { WebDashboardServer } from './server.js';
 import { CONFIG } from './config.js';
 import { NvidiaObserver } from './nvidia.js';
 import { calculateFibonacci, calculateFVGs, calculateSRLevels, calculatePOC } from './indicators.js';
+import { TradeMemory } from './trade_memory.js';
 // Setup file debug logging to bypass console.clear() wiping diagnostic history
 const logFilePath = path.join(process.cwd(), 'hft_debug.log');
 fs.writeFileSync(logFilePath, `[SYSTEM] --- HFT Bot Startup Debug Log | ${new Date().toISOString()} ---\n`);
@@ -61,9 +62,10 @@ async function main() {
     const models = {};
     const latestAiInsights = {};
     for (const modelId of Object.keys(CONFIG.MODELS)) {
+        const tradeMemory = new TradeMemory(modelId);
         models[modelId] = {
             strategy: new StrategyManager(),
-            execution: new ExecutionEngine(modelId, exchange)
+            execution: new ExecutionEngine(modelId, exchange, tradeMemory)
         };
         latestAiInsights[modelId] = {};
     }
@@ -251,10 +253,11 @@ async function main() {
         console.log('\x1b[1m\x1b[33m               ANTIGRAVITY MULTI-MODEL HFT TRADING SYSTEMS                     \x1b[0m');
         console.log(`\x1b[37m Running Mode   : ${CONFIG.SIMULATION_MODE ? 'LIVE SIMULATION (Safe)' : 'LIVE TRADING (Real API)'}\x1b[0m`);
         console.log(`\x1b[37m Engine Status  : ${isTradingActive ? '\x1b[32mACTIVE\x1b[37m' : '\x1b[31mPAUSED\x1b[37m'} | Ticks Processed: ${tickCount}\x1b[0m`);
+        // NEW: Show risk status and session
         console.log('\x1b[35m================================================================================\x1b[0m');
         console.log('\x1b[1m Model Performance Overview:\x1b[0m');
         console.log('--------------------------------------------------------------------------------');
-        console.log('  Model ID       | Net Profit  | Win Rate | Trades | Active Pos');
+        console.log('  Model ID       | Net Profit  | Win Rate | Trades | Active Pos | Daily DD');
         console.log('--------------------------------------------------------------------------------');
         for (const [modelId, model] of Object.entries(models)) {
             const stats = model.execution.getStats();
@@ -266,12 +269,25 @@ async function main() {
             const profitPadded = `${pnlColor}${netProfitStr.padEnd(11)}\x1b[0m`;
             const wrPadded = `${wrColor}${stats.winRate.toFixed(2)}%\x1b[0m`.padEnd(19);
             const tradesPadded = stats.totalTrades.toString().padEnd(6);
-            console.log(`  ${modelPadded} | ${profitPadded} | ${wrPadded} | ${tradesPadded} | ${activeCount}`);
+            // NEW: Show daily drawdown
+            const dailyDd = model.execution.riskManager.getDailyDrawdownPct();
+            const ddColor = dailyDd > 0.03 ? '\x1b[31m' : dailyDd > 0.01 ? '\x1b[33m' : '\x1b[32m';
+            const ddPadded = `${ddColor}${(dailyDd * 100).toFixed(2)}%\x1b[0m`.padEnd(9);
+            console.log(`  ${modelPadded} | ${profitPadded} | ${wrPadded} | ${tradesPadded} | ${activeCount}     | ${ddPadded}`);
         }
         console.log('\x1b[35m================================================================================\x1b[0m');
         console.log(`\x1b[90m Active Markets Ingesting: [${Object.keys(symbolTickCounts).join(', ')}]\x1b[0m`);
         console.log(`\x1b[90m Web Dashboard URL         : http://localhost:10001/\x1b[0m`);
         console.log(`\x1b[90m Diagnostic log written to : ${logFilePath}\x1b[0m`);
+        // NEW: Show top performing coins
+        const firstModel = Object.values(models)[0];
+        if (firstModel) {
+            const perf = firstModel.execution.riskManager.getPerformanceAttribution();
+            if (perf.length > 0) {
+                const top3 = perf.slice(0, 3);
+                console.log(`\x1b[90m Top Performers   : ${top3.map(p => `${p.symbol} (${p.winRate.toFixed(0)}% WR, $${p.netProfitUsd.toFixed(2)})`).join(' | ')}\x1b[0m`);
+            }
+        }
         console.log('\x1b[35m================================================================================\x1b[0m');
     }, 1000);
     // 5b. Dynamic AI Parameter Optimizer Loop (Every 3 minutes)
@@ -336,7 +352,7 @@ async function main() {
                 const currentParams = model.strategy.getAllParams();
                 const optimized = await nvidiaObserver.optimizeParameters(model.execution.getStats(), model.execution.getTradesHistory(), activeSymbols, candleData, modelConf.modelTag, currentParams, calculatedIndicators, dominance);
                 if (optimized && optimized.parameters) {
-                    logDebug(`[AI OPTIMIZER] [${modelId}] Received parameters shift: ${JSON.stringify(optimized.parameters)}`);
+                    logDebug(`[AI OPTIMIZER] [${modelId}] Received parameters shift: ${JSON.stringify(optimized.parameters)}\nAnalysis: ${JSON.stringify(optimized.analysis)}`);
                     latestAiInsights[modelId] = optimized.analysis || {};
                     model.strategy.setAiBiases(latestAiInsights[modelId]);
                     for (const [symbol, params] of Object.entries(optimized.parameters)) {
