@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NVIDIA NIM AI Observer - Thinking Hub Detail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Lightweight Chart -->
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    :root {
+      --bg-dark: #06070b;
+      --panel-bg: rgba(12, 14, 28, 0.6);
+      --border-light: rgba(255, 255, 255, 0.05);
+      --neon-cyan: #00f2fe;
+      --neon-green: #00ff87;
+      --neon-red: #ff2a5f;
+      --neon-gold: #ffd600;
+      --neon-purple: #a000ff;
+      --neon-orange: #ff7f00;
+      --text-main: #f5f6fa;
+      --text-muted: #7f8296;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: var(--bg-dark);
+      background-image: radial-gradient(circle at 50% 0%, #111429 0%, #06070b 70%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 20px 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding: 16px 20px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #00f2fe 0%, #a000ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header .symbol-badge-large {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--neon-cyan);
+      padding: 4px 16px;
+      background: rgba(0, 242, 254, 0.08);
+      border: 1px solid rgba(0, 242, 254, 0.2);
+      border-radius: 8px;
+    }
+    .back-btn {
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+      color: var(--text-main);
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-size: 14px;
+      transition: 0.2s;
+    }
+    .back-btn:hover { background: rgba(255,255,255,0.1); }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 16px;
+    }
+    /* Chart Panel */
+    .chart-panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      padding: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .chart-panel h2 {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    #chart-container {
+      width: 100%;
+      height: 500px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .chart-controls {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+    .tf-btn {
+      padding: 6px 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border-light);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      transition: 0.2s;
+    }
+    .tf-btn.active {
+      background: rgba(0, 242, 254, 0.1);
+      border-color: var(--neon-cyan);
+      color: var(--neon-cyan);
+    }
+    .tf-btn:hover { background: rgba(255,255,255,0.06); }
+
+    /* Info Side Panel */
+    .side-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .info-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      padding: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .info-card h3 {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      font-size: 13px;
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: var(--text-muted); }
+    .info-value { font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+    .value-bullish { color: var(--neon-green); }
+    .value-bearish { color: var(--neon-red); }
+    .value-neutral { color: var(--neon-gold); }
+    .value-highlight { color: var(--neon-cyan); }
+
+    /* Thinking Section */
+    .thinking-section {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-light);
+      border-radius: 12px;
+      padding: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .thinking-item {
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      background: rgba(255,255,255,0.02);
+      border-left: 3px solid var(--neon-cyan);
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .thinking-item .label {
+      font-weight: 600;
+      color: var(--neon-cyan);
+      display: block;
+      margin-bottom: 2px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .thinking-item .text { color: var(--text-main); }
+
+    /* Entry Markers */
+    .entry-marker-buy {
+      background: var(--neon-green);
+      border: 2px solid #00ff87;
+    }
+    .entry-marker-sell {
+      background: var(--neon-red);
+      border: 2px solid #ff2a5f;
+    }
+    .tp-line { color: var(--neon-cyan); }
+    .sl-line { color: var(--neon-red); }
+
+    /* Status Badge */
+    .status-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-active { background: rgba(0,255,135,0.12); color: var(--neon-green); }
+    .status-waiting { background: rgba(255,214,0,0.12); color: var(--neon-gold); }
+    .status-closed { background: rgba(255,42,95,0.12); color: var(--neon-red); }
+
+    .no-data {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <button class="back-btn" onclick="window.location.href='/'">&larr; Kembali ke Dashboard</button>
+      <h1>NVIDIA NIM AI Observer &mdash; Thinking Hub</h1>
+    </div>
+    <div>
+      <span class="symbol-badge-large" id="detail-symbol">--</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT: Chart -->
+    <div class="chart-panel">
+      <h2>&#x1F4C8; Hyperliquid Live Chart</h2>
+      <div id="chart-container"></div>
+      <div class="chart-controls">
+        <button class="tf-btn active" data-tf="5m">5m</button>
+        <button class="tf-btn" data-tf="15m">15m</button>
+        <button class="tf-btn" data-tf="30m">30m</button>
+        <button class="tf-btn" data-tf="1h">1h</button>
+        <button class="tf-btn" data-tf="4h">4h</button>
+        <span style="flex:1"></span>
+        <span id="chart-status" style="font-size:11px;color:var(--text-muted);align-self:center;">Memuat data...</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: Info Panel -->
+    <div class="side-panel">
+      <!-- AI Thinking -->
+      <div class="thinking-section" id="thinking-section">
+        <h3>&#x1F9E0; Proses Berpikir AI</h3>
+        <div id="thinking-content">
+          <div class="no-data">Menunggu data dari AI Observer...</div>
+        </div>
+      </div>
+
+      <!-- Entry Analysis -->
+      <div class="info-card" id="entry-card">
+        <h3>&#x1F4B0; Analisis Entry / Posisi</h3>
+        <div id="entry-content">
+          <div class="no-data">Belum ada posisi aktif atau sinyal untuk simbol ini.</div>
+        </div>
+      </div>
+
+      <!-- Risk Parameters -->
+      <div class="info-card" id="params-card">
+        <h3>&#x2699;&#xFE0F; Parameter & Risk</h3>
+        <div id="params-content">
+          <div class="no-data">Menunggu data parameter...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // Get symbol from URL query param
+    // ============================================================
+    const urlParams = new URLSearchParams(window.location.search);
+    const symbol = urlParams.get('symbol') || 'BTC';
+    document.getElementById('detail-symbol').textContent = symbol;
+
+    // ============================================================
+    // Chart setup (Lightweight Charts)
+    // ============================================================
+    const chartContainer = document.getElementById('chart-container');
+    const chart = LightweightCharts.createChart(chartContainer, {
+      layout: {
+        background: { type: 'solid', color: '#06070b' },
+        textColor: '#7f8296',
+        fontSize: 11,
+        fontFamily: 'JetBrains Mono, monospace'
+      },
+      grid: {
+        vertLines: { color: 'rgba(255,255,255,0.03)' },
+        horzLines: { color: 'rgba(255,255,255,0.03)' }
+      },
+      crosshair: {
+        mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: { color: '#00f2fe', width: 1, style: LightweightCharts.LineStyle.Dashed },
+        horzLine: { color: '#00f2fe', width: 1, style: LightweightCharts.LineStyle.Dashed }
+      },
+      timeScale: {
+        borderColor: 'rgba(255,255,255,0.05)',
+        timeVisible: true,
+        secondsVisible: false
+      },
+      rightPriceScale: {
+        borderColor: 'rgba(255,255,255,0.05)',
+        scaleMargins: { top: 0.1, bottom: 0.25 }
+      }
+    });
+
+    const candleSeries = chart.addCandlestickSeries({
+      upColor: '#00ff87',
+      downColor: '#ff2a5f',
+      borderUpColor: '#00ff87',
+      borderDownColor: '#ff2a5f',
+      wickUpColor: '#00ff87',
+      wickDownColor: '#ff2a5f'
+    });
+
+    // Additional line series for entry, TP, SL, trailing
+    const entryLine = chart.addLineSeries({
+      color: '#00f2fe',
+      lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.Solid,
+      lastValueVisible: true,
+      priceLineVisible: false,
+      title: 'ENTRY'
+    });
+
+    const tpLine = chart.addLineSeries({
+      color: '#00ff87',
+      lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      lastValueVisible: true,
+      priceLineVisible: false,
+      title: 'TP'
+    });
+
+    const slLine = chart.addLineSeries({
+      color: '#ff2a5f',
+      lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.Dotted,
+      lastValueVisible: true,
+      priceLineVisible: false,
+      title: 'SL'
+    });
+
+    const trailingLine = chart.addLineSeries({
+      color: '#ffd600',
+      lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.Dashed,
+      lastValueVisible: true,
+      priceLineVisible: false,
+      title: 'TRAIL'
+    });
+
+    // Markers for entry, TP, SL
+    let currentMarkers = [];
+    // Track lines data
+    let currentLines = { entry: null, tp: null, sl: null, trail: null };
+
+    // ============================================================
+    // Helper: Format USD
+    // ============================================================
+    function formatUsd(val) {
+      if (val === undefined || val === null) return '$0.00';
+      const sign = val >= 0 ? '' : '-';
+      return sign + '$' + Math.abs(val).toFixed(2);
+    }
+
+    // ============================================================
+    // Fetch candle data from Hyperliquid REST API
+    // ============================================================
+    let currentTimeframe = '5m';
+    const HYPERLIQUID_REST = 'https://api.hyperliquid.xyz';
+
+    async function fetchCandles(tf) {
+      const statusEl = document.getElementById('chart-status');
+      statusEl.textContent = `Memuat ${tf}...`;
+      try {
+        const now = Date.now();
+        let intervalMs = 5 * 60 * 1000;
+        if (tf === '15m') intervalMs = 15 * 60 * 1000;
+        else if (tf === '30m') intervalMs = 30 * 60 * 1000;
+        else if (tf === '1h') intervalMs = 60 * 60 * 1000;
+        else if (tf === '4h') intervalMs = 4 * 60 * 60 * 1000;
+        
+        const startTime = now - (40 * intervalMs);
+        
+        const url = `${HYPERLIQUID_REST}/info`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'candleSnapshot',
+            req: { coin: symbol, interval: tf, startTime, endTime: now }
+          })
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        const data = await response.json();
+        if (!data || !Array.isArray(data) || data.length === 0) {
+          statusEl.textContent = `Tidak ada data candle untuk ${symbol} (${tf})`;
+          return;
+        }
+        
+        // Format candles for lightweight-charts
+        const candles = data.map(c => ({
+          time: Math.floor(c.t / 1000), // Unix seconds
+          open: parseFloat(c.o),
+          high: parseFloat(c.h),
+          low: parseFloat(c.l),
+          close: parseFloat(c.c)
+        })).filter(c => c.time > 0 && !isNaN(c.open));
+
+        if (candles.length === 0) {
+          statusEl.textContent = `Data candle kosong untuk ${symbol} (${tf})`;
+          return;
+        }
+
+        candleSeries.setData(candles);
+        
+        // Re-apply markers if any
+        if (currentMarkers.length > 0) {
+          candleSeries.setMarkers(currentMarkers);
+        }
+
+        statusEl.textContent = `${candles.length} candle ${tf} | ${symbol}`;
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+        console.error('Fetch candles error:', err);
+      }
+    }
+
+    // Timeframe button handler
+    document.querySelectorAll('.tf-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentTimeframe = btn.dataset.tf;
+        fetchCandles(currentTimeframe);
+      });
+    });
+
+    // ============================================================
+    // WebSocket connection to get real-time thinking detail
+    // ============================================================
+    let ws = null;
+    function connectWs() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/dashboard`;
+      
+      try {
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+          // Request thinking detail for this symbol
+          ws.send(JSON.stringify({
+            type: 'request_thinking_detail',
+            symbol: symbol
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            
+            if (payload.type === 'thinking_detail' && payload.symbol === symbol) {
+              updateThinkingUI(payload.details);
+            } else if (payload.type === 'dashboard_update') {
+              // Also check if we can extract insight from dashboard data
+              const models = payload.data?.models || {};
+              const details = {};
+              for (const [modelId, modelData] of Object.entries(models)) {
+                const insights = modelData.aiInsights || {};
+                if (insights[symbol]) {
+                  const activePos = (modelData.activePositions || []).find(p => p.symbol === symbol);
+                  details[modelId] = {
+                    insight: insights[symbol],
+                    position: activePos || null,
+                    stats: modelData.stats || null
+                  };
+                }
+              }
+              if (Object.keys(details).length > 0) {
+                updateThinkingUI(details);
+              }
+            }
+          } catch(e) {}
+        };
+
+        ws.onclose = () => {
+          setTimeout(connectWs, 3000);
+        };
+
+        ws.onerror = () => {};
+      } catch(e) {}
+    }
+
+    // ============================================================
+    // Update UI with thinking detail & position data
+    // ============================================================
+    function updateThinkingUI(details) {
+      const entries = Object.entries(details);
+      if (entries.length === 0) return;
+
+      // Use first model's data
+      const [modelId, data] = entries[0];
+      const insight = data.insight || {};
+      const position = data.position || null;
+      const stats = data.stats || {};
+
+      // --- Update Chart Lines from insight/position ---
+      const currentCandleData = candleSeries.data() || [];
+      if (position) {
+        updateChartLines(position, currentCandleData);
+      } else {
+        // If no position yet, try to draw planned action levels from insight text
+        const levels = parseOrderLevels(insight, null);
+        if (levels.entry || levels.tp || levels.sl || levels.trail) {
+          // Create a pseudo-position to draw lines
+          const pseudoPos = {
+            entryPrice: levels.entry,
+            takeProfitPrice: levels.tp,
+            stopLossPrice: levels.sl,
+            trailingStopPrice: levels.trail,
+            side: insight.bias === 'BULLISH' ? 'BUY' : 'SELL',
+            entryTime: Date.now()
+          };
+          updateChartLines(pseudoPos, currentCandleData);
+        } else {
+          // Clear lines
+          updateChartLines(null, currentCandleData);
+        }
+      }
+
+      // --- Update Thinking Section ---
+      const thinkingContent = document.getElementById('thinking-content');
+      let thinkingHtml = '';
+
+      if (insight.current_thoughts) {
+        thinkingHtml += `
+          <div class="thinking-item">
+            <span class="label">&#x1F4AC; Current Thoughts</span>
+            <span class="text">${insight.current_thoughts}</span>
+          </div>`;
+      }
+      if (insight.planned_action) {
+        thinkingHtml += `
+          <div class="thinking-item" style="border-left-color: var(--neon-green);">
+            <span class="label" style="color: var(--neon-green);">&#x1F3AF; Planned Action</span>
+            <span class="text">${insight.planned_action}</span>
+          </div>`;
+      }
+      if (insight.waiting_for) {
+        thinkingHtml += `
+          <div class="thinking-item" style="border-left-color: var(--neon-gold);">
+            <span class="label" style="color: var(--neon-gold);">&#x23F3; Waiting For</span>
+            <span class="text">${insight.waiting_for}</span>
+          </div>`;
+      }
+      if (insight.post_algorithm_thoughts) {
+        thinkingHtml += `
+          <div class="thinking-item" style="border-left-color: var(--neon-purple);">
+            <span class="label" style="color: var(--neon-purple);">&#x1F4CA; Post-Algorithm Thoughts</span>
+            <span class="text">${insight.post_algorithm_thoughts}</span>
+          </div>`;
+      }
+      if (insight.rationale) {
+        thinkingHtml += `
+          <div class="thinking-item" style="border-left-color: var(--neon-orange);">
+            <span class="label" style="color: var(--neon-orange);">&#x1F4D1; Rasional</span>
+            <span class="text">${insight.rationale}</span>
+          </div>`;
+      }
+
+      if (!thinkingHtml) {
+        thinkingHtml = `<div class="no-data">AI sedang mengevaluasi market untuk ${symbol}...</div>`;
+      }
+      thinkingContent.innerHTML = thinkingHtml;
+
+      // --- Update Entry / Position Info ---
+      const entryContent = document.getElementById('entry-content');
+      if (position) {
+        const side = position.side || 'BUY';
+        const sideClass = side === 'BUY' ? 'value-bullish' : 'value-bearish';
+        const sideLabel = side === 'BUY' ? 'LONG (BUY)' : 'SHORT (SELL)';
+        const isActive = position.exitPrice === undefined || position.exitPrice === null;
+        const statusClass = isActive ? 'status-active' : 'status-closed';
+        const statusLabel = isActive ? 'AKTIF' : 'TERTUTUP';
+
+        entryContent.innerHTML = `
+          <div class="info-row">
+            <span class="info-label">Status</span>
+            <span class="status-badge ${statusClass}">${statusLabel}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Side</span>
+            <span class="info-value ${sideClass}">${sideLabel}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Entry Price</span>
+            <span class="info-value value-highlight">${formatUsd(position.entryPrice)}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Quantity</span>
+            <span class="info-value">${(position.quantity || 0).toFixed(4)}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Notional Value</span>
+            <span class="info-value">${formatUsd(position.notionalValue || (position.entryPrice * position.quantity))}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Est. Leverage</span>
+            <span class="info-value value-highlight">${position.estimatedLeverage || '1.00'}x</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Margin Used</span>
+            <span class="info-value">${formatUsd(position.marginUsed || (position.entryPrice * position.quantity))}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Take Profit (TP)</span>
+            <span class="info-value value-bullish">${formatUsd(position.takeProfitPrice)}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Stop Loss (SL)</span>
+            <span class="info-value value-bearish">${formatUsd(position.stopLossPrice)}</span>
+          </div>
+          ${position.remainingQty ? `
+          <div class="info-row">
+            <span class="info-label">Remaining Qty</span>
+            <span class="info-value">${position.remainingQty.toFixed(4)}</span>
+          </div>` : ''}
+          ${position.entryReason ? `
+          <div class="info-row" style="flex-direction: column; gap: 4px; padding: 8px 0;">
+            <span class="info-label">Alasan Entry</span>
+            <span class="info-value" style="font-size: 11px; color: var(--neon-cyan); word-break: break-word;">${position.entryReason}</span>
+          </div>` : ''}
+        `;
+
+        // Get current candle data for line endpoints
+        const currentCandleData = candleSeries.data() || [];
+        // Draw lines: Entry, TP, SL, Trailing
+        updateChartLines(position, currentCandleData);
+
+      } else {
+        entryContent.innerHTML = `
+          <div class="no-data">
+            Belum ada posisi aktif untuk ${symbol}.<br>
+            AI sedang memantau dan menunggu sinyal entry yang tepat.
+          </div>`;
+        // Clear markers
+        candleSeries.setMarkers([]);
+        currentMarkers = [];
+      }
+
+      // --- Update Parameters ---
+      const paramsContent = document.getElementById('params-content');
+      const insightParams = insight;
+      paramsContent.innerHTML = `
+        <div class="info-row">
+          <span class="info-label">Bias</span>
+          <span class="info-value ${insightParams.bias === 'BULLISH' ? 'value-bullish' : insightParams.bias === 'BEARISH' ? 'value-bearish' : 'value-neutral'}">${insightParams.bias || 'NEUTRAL'}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Confidence</span>
+          <span class="info-value">${insightParams.confidence || 0}%</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Model</span>
+          <span class="info-value value-highlight">${modelId}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Win Rate</span>
+          <span class="info-value">${stats.winRate ? stats.winRate.toFixed(1) + '%' : '0%'}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Total Trades</span>
+          <span class="info-value">${stats.totalTrades || 0}</span>
+        </div>
+      `;
+    }
+
+    // ============================================================
+    // Chart Markers & Lines (Entry, TP, SL, Trailing)
+    // ============================================================
+    function updateChartLines(position, candles) {
+      // Clear previous lines
+      entryLine.setData([]);
+      tpLine.setData([]);
+      slLine.setData([]);
+      trailingLine.setData([]);
+
+      if (!position) return;
+      if (!candles || candles.length === 0) return;
+
+      const latestTime = candles[candles.length - 1].time;
+      const startTime = candles[0].time;
+      const endTime = latestTime + 120; // extend a bit into future
+
+      // Helper: create flat horizontal line data
+      function makeLineData(price, label) {
+        if (price === undefined || price === null || isNaN(price)) return [];
+        return [
+          { time: startTime, value: price },
+          { time: endTime, value: price }
+        ];
+      }
+
+      // --- ENTRY LINE (solid cyan) ---
+      if (position.entryPrice) {
+        const entryData = makeLineData(position.entryPrice);
+        if (entryData.length > 0) {
+          entryLine.setData(entryData);
+        }
+      }
+
+      // --- TP LINE (dashed green) ---
+      if (position.takeProfitPrice) {
+        const tpData = makeLineData(position.takeProfitPrice);
+        if (tpData.length > 0) {
+          tpLine.setData(tpData);
+        }
+      }
+
+      // --- SL LINE (dotted red) ---
+      if (position.stopLossPrice) {
+        const slData = makeLineData(position.stopLossPrice);
+        if (slData.length > 0) {
+          slLine.setData(slData);
+        }
+      }
+
+      // --- TRAILING STOP LINE (dashed gold) ---
+      // If trailing stop is active, draw it; otherwise maybe draw from position data
+      const trailPrice = position.trailingStopPrice || position.currentTrailingStop || null;
+      if (trailPrice && !isNaN(trailPrice)) {
+        const trailData = makeLineData(trailPrice);
+        if (trailData.length > 0) {
+          trailingLine.setData(trailData);
+        }
+      }
+
+      // Update markers too
+      updateChartMarkers(position, candles);
+    }
+
+    function updateChartMarkers(position, candles) {
+      if (!position) return;
+      
+      const markers = [];
+      const baseTime = candles && candles.length > 0 
+        ? candles[candles.length - 1].time 
+        : Math.floor(Date.now() / 1000);
+
+      // --- ENTRY MARKER ---
+      const entryTime = Math.floor((position.entryTime || Date.now()) / 1000);
+      markers.push({
+        time: entryTime,
+        position: position.side === 'BUY' ? 'belowBar' : 'aboveBar',
+        color: position.side === 'BUY' ? '#00ff87' : '#ff2a5f',
+        shape: position.side === 'BUY' ? 'arrowUp' : 'arrowDown',
+        text: `ENTRY ${position.side} @ ${position.entryPrice?.toFixed(2) || '?'}`
+      });
+
+      // --- TP MARKER (offset for visibility) ---
+      if (position.takeProfitPrice) {
+        const isLong = position.side === 'BUY';
+        markers.push({
+          time: entryTime + 60,
+          position: isLong ? 'aboveBar' : 'belowBar',
+          color: '#00ff87',
+          shape: 'circle',
+          text: `TP @ ${position.takeProfitPrice?.toFixed(2) || '?'}`
+        });
+      }
+
+      // --- SL MARKER ---
+      if (position.stopLossPrice) {
+        const isLong = position.side === 'BUY';
+        markers.push({
+          time: entryTime + 120,
+          position: isLong ? 'belowBar' : 'aboveBar',
+          color: '#ff2a5f',
+          shape: 'circle',
+          text: `SL @ ${position.stopLossPrice?.toFixed(2) || '?'}`
+        });
+      }
+
+      // --- TRAILING STOP MARKER ---
+      const trailPrice = position.trailingStopPrice || position.currentTrailingStop || null;
+      if (trailPrice && !isNaN(trailPrice)) {
+        markers.push({
+          time: entryTime + 180,
+          position: 'aboveBar',
+          color: '#ffd600',
+          shape: 'square',
+          text: `TRAIL @ ${trailPrice.toFixed(2) || '?'}`
+        });
+      }
+
+      currentMarkers = markers;
+      candleSeries.setMarkers(markers);
+    }
+
+    // ============================================================
+    // Helper: extract TP/SL/Trail dari insight text (parsing)
+    // ============================================================
+    function parseOrderLevels(insight, position) {
+      const levels = { entry: null, tp: null, sl: null, trail: null };
+      
+      // Priority: position data
+      if (position) {
+        levels.entry = position.entryPrice || null;
+        levels.tp = position.takeProfitPrice || null;
+        levels.sl = position.stopLossPrice || null;
+        levels.trail = position.trailingStopPrice || position.currentTrailingStop || null;
+        return levels;
+      }
+
+      // Fallback: parse from insight text
+      if (!insight) return levels;
+
+      const text = insight.current_thoughts || insight.planned_action || insight.rationale || '';
+      
+      // Try to extract prices from text like "entry at 50000", "TP 52000", "SL 49000"
+      const entryMatch = text.match(/entry\s*(?:at|price|:)?\s*\$?([0-9,.]+)/i);
+      if (entryMatch) levels.entry = parseFloat(entryMatch[1].replace(/,/g, ''));
+
+      const tpMatch = text.match(/(?:tp|take\s*profit|target)\s*(?:at|:)?\s*\$?([0-9,.]+)/i);
+      if (tpMatch) levels.tp = parseFloat(tpMatch[1].replace(/,/g, ''));
+
+      const slMatch = text.match(/(?:sl|stop\s*loss|stop)\s*(?:at|:)?\s*\$?([0-9,.]+)/i);
+      if (slMatch) levels.sl = parseFloat(slMatch[1].replace(/,/g, ''));
+
+      const trailMatch = text.match(/(?:trail|trailing)\s*(?:stop|:)?\s*(?:at|:)?\s*\$?([0-9,.]+)/i);
+      if (trailMatch) levels.trail = parseFloat(trailMatch[1].replace(/,/g, ''));
+
+      return levels;
+    }
+
+    // ============================================================
+    // Init
+    // ============================================================
+    fetchCandles('5m');
+    connectWs();
+
+    // Re-fetch candles periodically (every 30s)
+    setInterval(() => {
+      fetchCandles(currentTimeframe);
+    }, 30000);
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      chart.applyOptions({ width: chartContainer.clientWidth });
+    });
+  </script>
+</body>
+</html>

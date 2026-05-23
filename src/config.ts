@@ -97,25 +97,25 @@ export const CONFIG = {
       takeProfitPct: 0.0240, // 2.40% profit target
       stopLossPct: 0.0080,   // 0.80% SL (1:3 R:R)
     },
-    XAUT: {
-      name: 'XAUT',
+        NEAR: {
+      name: 'NEAR',
       tradeSizeUsd: 1000,
-      tickSize: 0.1,
-      lotSize: 0.0001,
-      obiThreshold: 0.25,    
+      tickSize: 0.001,
+      lotSize: 0.1,
+      obiThreshold: 0.30,
       zScoreThreshold: 0.9,
-      takeProfitPct: 0.0120, // 1.20% profit target (Gold)
-      stopLossPct: 0.0040,   // 0.40% SL (1:3 R:R)
+      takeProfitPct: 0.0250, // 2.50% profit target
+      stopLossPct: 0.0080,   // 0.80% SL (1:3 R:R)
     },
-    XAG: {
-      name: 'XAG',
+    FET: {
+      name: 'FET',
       tradeSizeUsd: 1000,
       tickSize: 0.0001,
-      lotSize: 0.1,
-      obiThreshold: 0.25,    
+      lotSize: 1.0,
+      obiThreshold: 0.30,
       zScoreThreshold: 0.9,
-      takeProfitPct: 0.0150, // 1.50% profit target (Silver)
-      stopLossPct: 0.0050,   // 0.50% SL (1:3 R:R)
+      takeProfitPct: 0.0280, // 2.80% profit target
+      stopLossPct: 0.0090,   // 0.90% SL (1:3 R:R)
     }
   },
 

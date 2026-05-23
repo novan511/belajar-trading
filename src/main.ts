@@ -133,6 +133,25 @@ async function main() {
       };
     }
 
+        // Enrich payload with calculated leverage & margin info
+    for (const [modelId, modelData] of Object.entries(payload) as [string, any][]) {
+      if (modelData.activePositions) {
+        modelData.activePositions = modelData.activePositions.map((p: any) => {
+          // Calculate estimated leverage based on position size vs account balance
+          const notionalValue = p.entryPrice * p.quantity;
+          const estLeverage = notionalValue > 0 ? Math.min(notionalValue / CONFIG.ACCOUNT_BALANCE_USD * 10, 50) : 1;
+          const marginUsed = notionalValue / Math.max(estLeverage, 1);
+          
+          return {
+            ...p,
+            estimatedLeverage: parseFloat(estLeverage.toFixed(2)),
+            marginUsed: parseFloat(marginUsed.toFixed(2)),
+            notionalValue: parseFloat(notionalValue.toFixed(2))
+          };
+        });
+      }
+    }
+
     dashboardServer.broadcastUpdate({
       models: payload,
       isTradingActive,

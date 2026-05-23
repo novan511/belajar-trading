@@ -460,10 +460,11 @@
     }
 
     /* AI Thinking Cards */
-    .ai-card {
+        .ai-card {
       background: rgba(255, 255, 255, 0.02);
       border: 1px solid rgba(255, 255, 255, 0.04);
       border-radius: 12px;
+      cursor: pointer;
       padding: 16px;
       display: flex;
       flex-direction: column;
@@ -1379,6 +1380,11 @@
 
           const card = document.createElement('div');
           card.className = 'ai-card';
+          card.style.cursor = 'pointer';
+          card.title = 'Klik untuk lihat detail analisis ' + symbol + ' di Thinking Hub';
+          card.onclick = () => {
+            window.open('/thinking-hub?symbol=' + symbol, '_blank');
+          };
           card.innerHTML = `
             <div class="ai-header">
               <span class="ai-coin">${symbol}</span>
