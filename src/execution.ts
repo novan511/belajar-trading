@@ -3,7 +3,7 @@ import { TradeMemory } from './trade_memory.js';
 import { Side, TradeSignal, Position, TradeRecord, ExecutionStats } from './types.js';
 import { ExchangeConnector } from './exchange.js';
 import { RiskManager } from './risk_manager.js';
-import { saveTrade } from './trade_repository.js';
+import { saveTrade, upsertPosition, closePositionRecord } from './trade_repository.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -321,6 +321,8 @@ export class ExecutionEngine {
         this.activePositions.set(signal.symbol, existingList);
 
         this.stats.totalFeesUsd += order.feeUsd;
+
+        upsertPosition(position).catch(() => {});
       }
     } else {
       try {
@@ -472,6 +474,8 @@ export class ExecutionEngine {
     }
 
     saveTrade(record).catch(() => {});
+
+    closePositionRecord(position.id, exitPrice).catch(() => {});
 
     // NEW: Update RiskManager
     this.riskManager.updateBalance(netProfit, position.symbol, result);
