@@ -3,6 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { CONFIG } from './config.js';
+import { IExchangeConnector } from './exchange.interface.js';
+import { AITradeAnalyzer } from './ai_trade_analyzer.js';
 
 export class WebDashboardServer {
   private server: http.Server;
@@ -12,32 +14,43 @@ export class WebDashboardServer {
   private lastUpdateData: any = null;
   private onManualCloseCallback: ((modelId: string, symbol: string) => void) | null = null;
   private onToggleStatusCallback: (() => void) | null = null;
+  private exchange: IExchangeConnector;
+  private performanceDataProvider: (() => Record<string, any>) | null = null;
 
-
-  constructor(port: number = 3000) {
-    // 1. Create standard lightweight HTTP server to serve frontend assets
+  constructor(port: number = 3000, exchange?: IExchangeConnector) {
+    this.exchange = exchange as IExchangeConnector;
     this.server = http.createServer((req, res) => {
-            let filePath: string;
-      
-      if (req.method === 'GET' && (req.url === '/' || req.url === '/index.html')) {
-        filePath = path.join(process.cwd(), 'public', 'index.html');
-      } else if (req.method === 'GET' && req.url && req.url.startsWith('/thinking-hub')) {
-        filePath = path.join(process.cwd(), 'public', 'thinking-hub.html');
-      } else {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not Found');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
         return;
       }
-      
-      fs.readFile(filePath, (err, content) => {
-        if (err) {
-          res.writeHead(500, { 'Content-Type': 'text/plain' });
-          res.end('Error loading UI: ' + err.message);
-          return;
-        }
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(content);
-      });
+
+      const url = req.url || '/';
+
+      if (url === '/' || url === '/index.html') {
+        this.serveFile('index.html', res);
+        return;
+      }
+      if (url === '/performance' || url === '/performance.html') {
+        this.serveFile('performance.html', res);
+        return;
+      }
+      if (url.startsWith('/thinking-hub')) {
+        this.serveFile('thinking-hub.html', res);
+        return;
+      }
+
+      if (req.method === 'GET' && url.startsWith('/api/performance')) {
+        this.handlePerformanceApi(req, res);
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Not Found');
     });
 
     // 2. Create WebSocket server sharing the same port / HTTP server
@@ -57,7 +70,7 @@ export class WebDashboardServer {
     });
 
     // Monitor browser client connections
-    this.wss.on('connection', (ws: WebSocket) => {
+    this.wss.on('connection', (ws: WebSocket, request: any) => {
       this.clients.add(ws);
       
       // Send initial data packet immediately on connection
@@ -71,7 +84,8 @@ export class WebDashboardServer {
       ws.on('message', (message: string) => {
         try {
           const parsed = JSON.parse(message.toString());
-                    if (parsed.type === 'manual_close' && parsed.symbol && parsed.modelId) {
+          
+          if (parsed.type === 'manual_close' && parsed.symbol && parsed.modelId) {
             console.log(`\x1b[35m[WEB-UI] Received manual close request for model ${parsed.modelId} symbol ${parsed.symbol}\x1b[0m`);
             if (this.onManualCloseCallback) {
               this.onManualCloseCallback(parsed.modelId, parsed.symbol);
@@ -82,7 +96,6 @@ export class WebDashboardServer {
               this.onToggleStatusCallback();
             }
           } else if (parsed.type === 'request_thinking_detail' && parsed.symbol) {
-            // Send detailed thinking data for the requested symbol from lastUpdateData
             if (this.lastUpdateData) {
               const models = this.lastUpdateData.models || {};
               const details: Record<string, any> = {};
@@ -104,6 +117,24 @@ export class WebDashboardServer {
                 details
               }));
             }
+          } else if (parsed.type === 'request_risk_metrics' && parsed.modelId) {
+            ws.send(JSON.stringify({
+              type: 'risk_metrics_response',
+              modelId: parsed.modelId,
+              data: this.lastUpdateData?.models?.[parsed.modelId]?.riskMetrics || null
+            }));
+          } else if (parsed.type === 'request_equity_curve' && parsed.modelId) {
+            ws.send(JSON.stringify({
+              type: 'equity_curve_response',
+              modelId: parsed.modelId,
+              data: this.lastUpdateData?.models?.[parsed.modelId]?.equityCurve || []
+            }));
+          } else if (parsed.type === 'request_performance_attribution' && parsed.modelId) {
+            ws.send(JSON.stringify({
+              type: 'performance_attribution_response',
+              modelId: parsed.modelId,
+              data: this.lastUpdateData?.models?.[parsed.modelId]?.performanceAttribution || []
+            }));
           }
         } catch (err: any) {
           console.error('[WEB-UI] Error parsing WebSocket message:', err.message);
@@ -124,7 +155,37 @@ export class WebDashboardServer {
     this.server.listen(port, () => {
       console.log(`\n\x1b[32m\x1b[1m[WEB-UI] Premium Real-time HTML Dashboard is now online!`);
       console.log(`[WEB-UI] Open this link in your browser to view it live:`);
-      console.log(`\x1b[36m\x1b[4mhttp://localhost:${port}/\x1b[0m\n`);
+      console.log(`\x1b[36m\x1b[4mhttp://localhost:${port}/\x1b[0m`);
+
+    });
+  }
+
+  // ================================================================
+  // FILE SERVING
+  // ================================================================
+
+  private serveFile(filename: string, res: http.ServerResponse) {
+    const filePath = path.join(process.cwd(), 'public', filename);
+    
+    fs.readFile(filePath, (err, content) => {
+      if (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Error loading UI: ' + err.message);
+        return;
+      }
+      const ext = path.extname(filename);
+      const mimeTypes: Record<string, string> = {
+        '.html': 'text/html',
+        '.js': 'text/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+      };
+      res.writeHead(200, { 'Content-Type': mimeTypes[ext] || 'text/html' });
+      res.end(content);
     });
   }
 
@@ -137,7 +198,6 @@ export class WebDashboardServer {
       type: 'heartbeat',
       tickCount: this.tickCount
     });
-
     this.broadcast(payload);
   }
 
@@ -155,13 +215,9 @@ export class WebDashboardServer {
       type: 'dashboard_update',
       data: this.lastUpdateData
     });
-
     this.broadcast(payload);
   }
 
-  /**
-   * Internal helper to send payload to all active web clients
-   */
   private broadcast(payload: string) {
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
@@ -170,9 +226,6 @@ export class WebDashboardServer {
     }
   }
 
-  /**
-   * Registers a callback to execute when a browser manual close position request is received
-   */
   public registerManualCloseCallback(callback: (modelId: string, symbol: string) => void) {
     this.onManualCloseCallback = callback;
   }
@@ -181,9 +234,58 @@ export class WebDashboardServer {
     this.onToggleStatusCallback = callback;
   }
 
-  /**
-   * Shutdown Server gracefully
-   */
+  public registerPerformanceDataProvider(provider: () => Record<string, any>) {
+    this.performanceDataProvider = provider;
+  }
+
+  private handlePerformanceApi(req: http.IncomingMessage, res: http.ServerResponse) {
+    if (!this.performanceDataProvider) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Performance data not available' }));
+      return;
+    }
+    try {
+      const url = new URL(req.url || '/api/performance', `http://${req.headers.host}`);
+      const meta = url.searchParams.get('meta') === '1';
+      const data = this.performanceDataProvider();
+      if (meta) {
+        const models: Record<string, any> = {};
+        for (const [id, runner] of Object.entries(data.runners || {})) {
+          try {
+            const execution = (runner as any).execution;
+            const stats = execution && execution.getStats ? execution.getStats() : {};
+            models[id] = { stats };
+          } catch {
+            models[id] = { stats: {} };
+          }
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ models }));
+        return;
+      }
+
+      const analyzer = new AITradeAnalyzer();
+      const allTrades: any[] = [];
+      const runners = data.runners || {};
+      for (const runner of Object.values(runners)) {
+        try {
+          const execution = (runner as any).execution;
+          if (execution) {
+            const trades = execution.getTradesHistory ? execution.getTradesHistory() : [];
+            allTrades.push(...trades);
+          }
+        } catch {}
+      }
+      const riskMetrics = null;
+      const analysis = analyzer.analyze(allTrades, riskMetrics);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ trades: allTrades, analysis, models: runners }));
+    } catch (err: any) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+  }
+
   public close() {
     this.wss.close();
     this.server.close();

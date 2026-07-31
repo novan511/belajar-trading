@@ -3,12 +3,10 @@ import { RiskManager } from './risk_manager.js';
 import fs from 'fs';
 import path from 'path';
 export class ExecutionEngine {
-    activePositions = new Map(); // Key is symbol, value is array of positions
+    activePositions = new Map();
     tradesHistory = [];
     exchange;
-    // NEW: Risk Manager instance
     riskManager;
-    // Track Stats
     stats = {
         totalTrades: 0,
         winningTrades: 0,
@@ -20,12 +18,14 @@ export class ExecutionEngine {
         averageHoldTimeSec: 0
     };
     tradeMemory;
+    database = null;
     modelId;
-    constructor(modelId, exchange, tradeMemory) {
+    constructor(modelId, exchange, tradeMemory, database) {
         this.modelId = modelId;
         this.exchange = exchange;
         this.tradeMemory = tradeMemory;
-        this.riskManager = new RiskManager(); // NEW
+        this.database = database || null;
+        this.riskManager = new RiskManager();
         this.loadTradesArchive();
     }
     /**
@@ -407,6 +407,9 @@ export class ExecutionEngine {
         this.saveTradesArchive();
         if (this.tradeMemory) {
             this.tradeMemory.add(record);
+        }
+        if (this.database) {
+            this.database.saveTrade(record);
         }
         // NEW: Update RiskManager
         this.riskManager.updateBalance(netProfit, position.symbol, result);

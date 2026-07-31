@@ -1,20 +1,19 @@
 import { CONFIG } from './config.js';
 import { TradeMemory } from './trade_memory.js';
 import { Side, TradeSignal, Position, TradeRecord, ExecutionStats } from './types.js';
-import { ExchangeConnector } from './exchange.js';
+import { IExchangeConnector } from './exchange.interface.js';
 import { RiskManager } from './risk_manager.js';
+import { TradeDatabase } from './database.js';
 import fs from 'fs';
 import path from 'path';
 
 export class ExecutionEngine {
-  private activePositions: Map<string, Position[]> = new Map(); // Key is symbol, value is array of positions
+  private activePositions: Map<string, Position[]> = new Map();
   private tradesHistory: TradeRecord[] = [];
-  private exchange: ExchangeConnector;
+  private exchange: IExchangeConnector;
 
-  // NEW: Risk Manager instance
   public riskManager: RiskManager;
 
-  // Track Stats
   private stats: ExecutionStats = {
     totalTrades: 0,
     winningTrades: 0,
@@ -27,14 +26,15 @@ export class ExecutionEngine {
   };
 
   private tradeMemory: TradeMemory;
-
+  private database: TradeDatabase | null = null;
   private modelId: string;
 
-  constructor(modelId: string, exchange: ExchangeConnector, tradeMemory: TradeMemory) {
+  constructor(modelId: string, exchange: IExchangeConnector, tradeMemory: TradeMemory, database?: TradeDatabase) {
     this.modelId = modelId;
     this.exchange = exchange;
     this.tradeMemory = tradeMemory;
-    this.riskManager = new RiskManager(); // NEW
+    this.database = database || null;
+    this.riskManager = new RiskManager();
     this.loadTradesArchive();
   }
 
@@ -468,6 +468,9 @@ export class ExecutionEngine {
     this.saveTradesArchive();
     if (this.tradeMemory) {
       this.tradeMemory.add(record);
+    }
+    if (this.database) {
+      this.database.saveTrade(record);
     }
 
     // NEW: Update RiskManager

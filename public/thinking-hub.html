@@ -222,20 +222,113 @@
       color: var(--text-muted);
       font-size: 14px;
     }
+
+    /* ===== TRADE HISTORY TABLE ===== */
+    .trade-history-panel {
+      margin-top: 16px;
+      background: var(--panel-bg);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      padding: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .trade-history-panel h2 {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .trade-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .trade-table th {
+      text-align: left;
+      padding: 8px 10px;
+      color: var(--text-muted);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-weight: 500;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+    .trade-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+    }
+    .trade-table tr:hover td {
+      background: rgba(255,255,255,0.02);
+    }
+    .trade-side-buy { color: var(--neon-green); font-weight: 600; }
+    .trade-side-sell { color: var(--neon-red); font-weight: 600; }
+    .trade-pnl-win { color: var(--neon-green); font-weight: 600; }
+    .trade-pnl-loss { color: var(--neon-red); font-weight: 600; }
+    .trade-pnl-even { color: var(--neon-gold); }
+    .trade-time { color: var(--text-muted); font-size: 11px; }
+  /* ===== MOBILE RESPONSIVE ===== */
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr !important; }
+    .header { flex-direction: column !important; gap: 10px !important; padding: 12px !important; }
+    .header h1 { font-size: 14px !important; }
+    .header .symbol-badge-large { font-size: 20px !important; padding: 2px 12px !important; }
+    .chart-panel { padding: 10px !important; }
+    #chart-container { height: 300px !important; }
+    .chart-controls { gap: 4px !important; }
+    .tf-btn { padding: 4px 10px !important; font-size: 10px !important; }
+    .side-panel { gap: 8px !important; }
+    .info-card, .thinking-section, .trade-history-panel { padding: 10px !important; }
+    .trade-table th, .trade-table td { padding: 4px 6px !important; font-size: 10px !important; }
+    .trade-table td:not(:first-child):not(:nth-child(2)):not(:nth-child(3)):not(:nth-child(4)) { display: none; }
+    .trade-table th:not(:first-child):not(:nth-child(2)):not(:nth-child(3)):not(:nth-child(4)) { display: none; }
+    body { padding: 8px !important; }
+    .thinking-item { font-size: 11px !important; padding: 6px 8px !important; }
+    .info-row { font-size: 11px !important; padding: 4px 0 !important; }
+  }
+  @media (max-width: 480px) {
+    #chart-container { height: 220px !important; }
+    .trade-table th, .trade-table td { font-size: 9px !important; padding: 3px 4px !important; }
+    .trade-table td:nth-child(7), .trade-table th:nth-child(7),
+    .trade-table td:nth-child(8), .trade-table th:nth-child(8) { display: none; }
+  }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="header-left">
-      <button class="back-btn" onclick="window.location.href='/'">&larr; Kembali ke Dashboard</button>
-      <h1>NVIDIA NIM AI Observer &mdash; Thinking Hub</h1>
+  <nav style="
+    background: rgba(12,14,28,0.85);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 12px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  ">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:10px;height:10px;border-radius:50%;background:var(--neon-cyan);box-shadow:0 0 16px var(--neon-cyan);animation:pulseGlow 2s infinite alternate;"></div>
+      <div>
+        <h1 style="font-size:16px;margin:0;font-weight:700;letter-spacing:0.5px;background:linear-gradient(135deg,#fff,#a5a9c2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">THINKING HUB</h1>
+        <p style="font-size:11px;color:var(--text-muted);margin:0;">AI Detail Analysis Per Coin</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <a href="/" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Dashboard</a>
+      <a href="/performance" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Performance Lab</a>
+      <a href="/thinking-hub" style="color:var(--neon-cyan);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);">Thinking Hub</a>
     </div>
     <div>
       <span class="symbol-badge-large" id="detail-symbol">--</span>
     </div>
-  </div>
+  </nav>
 
   <div class="grid">
+    <div style="display:flex;flex-direction:column;gap:16px;">
     <!-- LEFT: Chart -->
     <div class="chart-panel">
       <h2>&#x1F4C8; Hyperliquid Live Chart</h2>
@@ -250,6 +343,33 @@
         <span id="chart-status" style="font-size:11px;color:var(--text-muted);align-self:center;">Memuat data...</span>
       </div>
     </div>
+
+    <!-- TRADE HISTORY: khusus untuk symbol yg lagi dibuka -->
+    <div class="trade-history-panel" id="trade-history-panel">
+      <h2>&#x1F4CA; Trade History — <span id="trade-history-symbol">--</span></h2>
+      <div style="overflow-x: auto;">
+        <table class="trade-table" id="trade-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Side</th>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>Qty</th>
+              <th>P&L</th>
+              <th>Result</th>
+              <th>Hold</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody id="trade-tbody">
+            <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">Memuat history trade untuk <span id="trade-history-symbol-loading"></span>...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    </div><!-- END: left column -->
 
     <!-- RIGHT: Info Panel -->
     <div class="side-panel">
@@ -849,10 +969,128 @@
     }
 
     // ============================================================
+    // TRADE HISTORY — fetch from WebSocket dashboard data
+    // ============================================================
+    function updateTradeHistory(models) {
+      const tbody = document.getElementById('trade-tbody');
+      const symLabel = document.getElementById('trade-history-symbol');
+      symLabel.textContent = symbol;
+
+      const allTrades = [];
+
+      // Kumpulin semua trades dari semua model
+      for (const [modelId, modelData] of Object.entries(models || {})) {
+        const trades = modelData.tradesHistory || [];
+        for (const t of trades) {
+          if (t.symbol === symbol) {
+            allTrades.push({ ...t, modelId });
+          }
+        }
+      }
+
+      if (allTrades.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px;">Belum ada trade history untuk ${symbol}.</td></tr>`;
+        return;
+      }
+
+      // Sort descending by entry time
+      allTrades.sort((a, b) => (b.entryTime || 0) - (a.entryTime || 0));
+
+      tbody.innerHTML = allTrades.map(t => {
+        const time = new Date(t.entryTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const sideClass = t.side === 'BUY' ? 'trade-side-buy' : 'trade-side-sell';
+        const sideLabel = t.side === 'BUY' ? 'LONG' : 'SHORT';
+        const pnl = t.netProfitUsd || 0;
+        const pnlClass = pnl > 0 ? 'trade-pnl-win' : pnl < 0 ? 'trade-pnl-loss' : 'trade-pnl-even';
+        const pnlStr = pnl > 0 ? '+' : '';
+        const resultLabel = t.result || (pnl > 0 ? 'WIN' : pnl < 0 ? 'LOSS' : 'BREAKEVEN');
+        const resultClass = resultLabel === 'WIN' ? 'trade-pnl-win' : resultLabel === 'LOSS' ? 'trade-pnl-loss' : 'trade-pnl-even';
+        const hold = (t.holdTimeSec || 0) > 60 ? `${(t.holdTimeSec / 60).toFixed(1)}m` : `${(t.holdTimeSec || 0).toFixed(0)}s`;
+        const entryPrice = t.entryPrice?.toFixed(2) || '--';
+        const exitPrice = t.exitPrice?.toFixed(2) || '--';
+        const qty = t.quantity?.toFixed(4) || '--';
+        const reason = t.exitReason || t.entryReason || '--';
+
+        return `
+          <tr>
+            <td class="trade-time">${time}</td>
+            <td class="${sideClass}">${sideLabel}</td>
+            <td>${entryPrice}</td>
+            <td>${exitPrice}</td>
+            <td>${qty}</td>
+            <td class="${pnlClass}">${pnlStr}$${pnl.toFixed(2)}</td>
+            <td class="${resultClass}">${resultLabel}</td>
+            <td class="trade-time">${hold}</td>
+            <td style="font-size:10px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${reason}">${reason}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Listen for dashboard updates that include trade history
+    // Modify connectWs to also handle dashboard_update for trade history
+    const origWsMessage = ws?.onmessage;
+    // Override: kita handle via dashboard_update message dari WS
+    function handleWsMessage(event) {
+      try {
+        const payload = JSON.parse(event.data);
+
+        if (payload.type === 'thinking_detail' && payload.symbol === symbol) {
+          updateThinkingUI(payload.details);
+        } else if (payload.type === 'dashboard_update') {
+          const models = payload.data?.models || {};
+          const details = {};
+          for (const [modelId, modelData] of Object.entries(models)) {
+            const insights = modelData.aiInsights || {};
+            if (insights[symbol]) {
+              const activePos = (modelData.activePositions || []).find(p => p.symbol === symbol);
+              details[modelId] = {
+                insight: insights[symbol],
+                position: activePos || null,
+                stats: modelData.stats || null
+              };
+            }
+          }
+          if (Object.keys(details).length > 0) {
+            updateThinkingUI(details);
+          }
+          // NEW: Update trade history from dashboard data
+          updateTradeHistory(models);
+        }
+      } catch(e) {}
+    }
+
+    // Ganti onmessage handler dengan yang baru
+    function connectWsWithTradeHistory() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/dashboard`;
+      
+      try {
+        ws = new WebSocket(wsUrl);
+        
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: 'request_thinking_detail',
+            symbol: symbol
+          }));
+        };
+
+        ws.onmessage = handleWsMessage;
+
+        ws.onclose = () => {
+          setTimeout(connectWsWithTradeHistory, 3000);
+        };
+
+        ws.onerror = () => {};
+      } catch(e) {}
+    }
+
+    // ============================================================
     // Init
     // ============================================================
+    document.getElementById('trade-history-symbol-loading').textContent = symbol;
     fetchCandles('5m');
-    connectWs();
+    connectWsWithTradeHistory();
 
     // Re-fetch candles periodically (every 30s)
     setInterval(() => {
