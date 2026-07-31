@@ -3,6 +3,7 @@ import { TradeMemory } from './trade_memory.js';
 import { Side, TradeSignal, Position, TradeRecord, ExecutionStats } from './types.js';
 import { ExchangeConnector } from './exchange.js';
 import { RiskManager } from './risk_manager.js';
+import { saveTrade } from './trade_repository.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -469,6 +470,8 @@ export class ExecutionEngine {
     if (this.tradeMemory) {
       this.tradeMemory.add(record);
     }
+
+    saveTrade(record).catch(() => {});
 
     // NEW: Update RiskManager
     this.riskManager.updateBalance(netProfit, position.symbol, result);

@@ -1,0 +1,13 @@
+version: 0.2
+
+
+artifacts:
+  files:
+    - dist/**/*
+    - node_modules/**/*
+    - package.json
+    - package-lock.json
+    - appspec.yml
+    - public/**/*
+    - .env
+  base-directory: .

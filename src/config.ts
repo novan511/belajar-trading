@@ -9,6 +9,10 @@ export const CONFIG = {
   // Trading Mode
   SIMULATION_MODE: true, // If true, simulates orders against live Hyperliquid WebSocket data feed
 
+  // Supabase
+  SUPABASE_URL: process.env.SUPABASE_URL || '',
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+
   // L1 Ethereum Private Key (only used if SIMULATION_MODE is false)
   WALLET_PRIVATE_KEY: process.env.WALLET_PRIVATE_KEY || '',
 

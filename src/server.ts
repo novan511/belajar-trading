@@ -14,7 +14,7 @@ export class WebDashboardServer {
   private onToggleStatusCallback: (() => void) | null = null;
 
 
-  constructor(port: number = 3000) {
+  constructor(port: number = process.env.PORT ? parseInt(process.env.PORT) : 10001) {
     // 1. Create standard lightweight HTTP server to serve frontend assets
     this.server = http.createServer((req, res) => {
             let filePath: string;
