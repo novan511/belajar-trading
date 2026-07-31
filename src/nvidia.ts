@@ -212,6 +212,10 @@ Example Response:
     };
 
     try {
+      const controller = new AbortController();
+      const timeoutMs = 45000;
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      
       const response = await fetch(this.endpoint, {
         method: 'POST',
         headers: {
@@ -225,14 +229,17 @@ Example Response:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: JSON.stringify(userPrompt, null, 2) }
           ],
-          max_tokens: 4096, // Expanded to accommodate full multi-symbol payload without truncation
+          max_tokens: 4096,
           temperature: 0.2
         }),
-        signal: AbortSignal.timeout(35000)
+        signal: controller.signal
       });
-
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        console.error(`[NVIDIA OBSERVER] API Error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error(`[NVIDIA OBSERVER] API Error: ${response.status} ${response.statusText} | ${errorText.slice(0, 200)}`);
         return null;
       }
 
