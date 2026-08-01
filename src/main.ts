@@ -533,12 +533,12 @@ async function main() {
 
   const aiOptimizationInterval = setInterval(runParameterOptimization, 180000);
   
-  // Warm start AI check: trigger the first optimization after 10 seconds of active trade monitoring
+  // Warm start AI check: trigger the first optimization after 5 seconds of active trade monitoring
   const warmStartTimeout = setTimeout(() => {
     runParameterOptimization().catch(err => {
       logDebug(`Error during warm-start AI optimization: ${err.message}`);
     });
-  }, 10000);
+  }, 5000);
 
 
   // 6. Handle Graceful Shutdown

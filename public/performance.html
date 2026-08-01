@@ -148,6 +148,7 @@
         </div>
       </div>
       <div class="pills">
+        <span id="model-label" style="color:var(--cyan);font-weight:700;font-size:13px;font-family:'Space Grotesk',sans-serif;">All Models</span>
         <a href="/" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Dashboard</a>
         <a href="/performance" style="color:var(--neon-cyan);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);">Performance Lab</a>
         <a href="/thinking-hub" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Thinking Hub</a>
@@ -192,6 +193,11 @@
           <div class="kpi-label">Max Drawdown</div>
           <div class="kpi-value" id="metric-max-dd">0%</div>
           <div class="kpi-sub"><span>Avg Hold</span><span id="metric-avg-hold">0s</span></div>
+        </div>
+        <div class="kpi" style="--accent:var(--green)">
+          <div class="kpi-label">Total Trades</div>
+          <div class="kpi-value" id="total-trades">0</div>
+          <div class="kpi-sub"><span>Wins</span><span id="metric-wins-inline" style="color:var(--green)">0</span></div>
         </div>
       </div>
 

@@ -709,12 +709,23 @@
         </div>
       </div>
       
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <a href="/" style="color:var(--neon-cyan);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);">Dashboard</a>
-        <a href="/performance" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Performance Lab</a>
-        <a href="/thinking-hub" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Thinking Hub</a>
-      </div>
-    </header>
+       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+         <a href="/" style="color:var(--neon-cyan);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);">Dashboard</a>
+         <a href="/performance" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Performance Lab</a>
+         <a href="/thinking-hub" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Thinking Hub</a>
+       </div>
+       <div class="system-status">
+         <div class="status-item">
+           <span class="status-label">Run Mode</span>
+           <span class="status-value sim" id="run-mode">LIVE SIMULATION</span>
+         </div>
+         <div class="status-item">
+           <span class="status-label">Engine Status</span>
+           <span class="status-value" id="engine-status">ACTIVE</span>
+         </div>
+         <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--neon-cyan); box-shadow: 0 0 16px var(--neon-cyan);" id="heartbeat-led"></div>
+       </div>
+     </header>
 
     <!-- CRYPTO MARKET INTELLIGENCE BAR -->
     <div class="panel" style="margin-bottom: 0px; padding: 16px 24px;">
@@ -1309,7 +1320,7 @@
 
       aiContainer.innerHTML = '';
       
-      const insights = currentModel.aiInsights || {};
+       const insights = currentModel.aiInsights || {};
       if (Object.keys(insights).length === 0) {
         aiEmpty.style.display = 'flex';
       } else {

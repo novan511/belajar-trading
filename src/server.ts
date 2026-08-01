@@ -208,7 +208,8 @@ export class WebDashboardServer {
     this.lastUpdateData = {
       simMode: CONFIG.SIMULATION_MODE,
       models: engineData.models,
-      isTradingActive: engineData.isTradingActive
+      isTradingActive: engineData.isTradingActive,
+      globalDominance: engineData.globalDominance
     };
 
     const payload = JSON.stringify({
