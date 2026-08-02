@@ -1,37 +1,35 @@
 import WebSocket from 'ws';
 import { CONFIG } from './config.js';
-import { OrderBook } from './types.js';
+import { OrderBook, Side, CandleSnapshot } from './types.js';
+import { IExchangeConnector } from './exchange.interface.js';
 
 type BookUpdateCallback = (book: OrderBook) => void;
 
-export class ExchangeConnector {
+export class ExchangeConnector implements IExchangeConnector {
   private ws: WebSocket | null = null;
   private onBookUpdateCallback: BookUpdateCallback | null = null;
   private isReconnecting = false;
+  private connected = false;
+  private reconnectAttempts = 1;
 
   constructor() {}
 
-  /**
-   * Set callback for order book updates
-   */
   public onBookUpdate(callback: BookUpdateCallback) {
     this.onBookUpdateCallback = callback;
   }
 
-  /**
-   * Start the live WebSocket connection to Hyperliquid API
-   */
   public connect() {
-    const wsUrl = CONFIG.HYPERLIQUID_WS_URL;
+    if (this.connected || (this.ws && this.ws.readyState === WebSocket.OPEN)) {
+      return;
+    }
 
-    console.log(`[EXCHANGE] Connecting to Hyperliquid WebSocket: ${wsUrl}`);
+    const wsUrl = CONFIG.HYPERLIQUID_WS_URL;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.on('open', () => {
-      console.log('[EXCHANGE] Hyperliquid WebSocket connected.');
+      this.connected = true;
       this.isReconnecting = false;
-
-      // Subscribe to L2 Book updates for all configured perp assets dynamically
+      this.reconnectAttempts = 1;
       for (const symbolConfig of Object.values(CONFIG.SYMBOLS)) {
         this.subscribeToCoin(symbolConfig.name);
       }
@@ -40,31 +38,33 @@ export class ExchangeConnector {
     this.ws.on('message', (data: WebSocket.Data) => {
       try {
         const rawMessage = JSON.parse(data.toString());
-
-        // Hyperliquid L2 Book format filter
         if (rawMessage.channel === 'l2Book' && rawMessage.data) {
           const bookData = rawMessage.data;
-          const symbol = bookData.coin; // 'BTC' or 'ETH'
-
-          const bids = bookData.levels[0]; // Array of { px, sz, n }
+          const symbol = bookData.coin;
+          const bids = bookData.levels[0];
           const asks = bookData.levels[1];
 
-          if (bids && bids.length > 0 && asks && asks.length > 0) {
-            const bestBidPrice = parseFloat(bids[0].px);
-            const bestBidQty = parseFloat(bids[0].sz);
-            const bestAskPrice = parseFloat(asks[0].px);
-            const bestAskQty = parseFloat(asks[0].sz);
+          if (!bids || !asks || bids.length === 0 || asks.length === 0) return;
 
-            const book: OrderBook = {
-              symbol,
-              bids: [[bestBidPrice, bestBidQty]],
-              asks: [[bestAskPrice, bestAskQty]],
-              updatedAt: bookData.time,
-            };
+          const bestBidPrice = parseFloat(bids[0].px);
+          const bestBidQty = parseFloat(bids[0].sz);
+          const bestAskPrice = parseFloat(asks[0].px);
+          const bestAskQty = parseFloat(asks[0].sz);
 
-            if (this.onBookUpdateCallback) {
-              this.onBookUpdateCallback(book);
-            }
+          if (isNaN(bestBidPrice) || isNaN(bestAskPrice) || isNaN(bestBidQty) || isNaN(bestAskQty)) return;
+          if (bestBidPrice <= 0 || bestAskPrice <= 0 || bestBidQty <= 0 || bestAskQty <= 0) return;
+          if (bestBidPrice >= bestAskPrice) return;
+          if (!isFinite(bestBidPrice) || !isFinite(bestAskPrice)) return;
+
+          const book: OrderBook = {
+            symbol,
+            bids: [[bestBidPrice, bestBidQty]],
+            asks: [[bestAskPrice, bestAskQty]],
+            updatedAt: bookData.time,
+          };
+
+          if (this.onBookUpdateCallback) {
+            this.onBookUpdateCallback(book);
           }
         }
       } catch (err) {
@@ -73,82 +73,70 @@ export class ExchangeConnector {
     });
 
     this.ws.on('close', () => {
-      console.warn('[EXCHANGE] Hyperliquid WebSocket connection closed.');
+      this.connected = false;
       this.reconnect();
     });
 
     this.ws.on('error', (err) => {
       console.error('[EXCHANGE] Hyperliquid WebSocket error:', err.message);
+      this.connected = false;
       this.ws?.close();
     });
   }
 
-  /**
-   * Helper to subscribe to L2 Book for a specific coin perp
-   */
+  public disconnect() {
+    this.connected = false;
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  public isConnected(): boolean {
+    return this.connected && this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
   private subscribeToCoin(coin: string) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-
     const subMessage = {
       method: 'subscribe',
-      subscription: {
-        type: 'l2Book',
-        coin: coin
-      }
+      subscription: { type: 'l2Book', coin }
     };
-
-    console.log(`[EXCHANGE] Subscribing to Hyperliquid L2 Book: ${coin}`);
     this.ws.send(JSON.stringify(subMessage));
   }
 
-  /**
-   * Simple reconnection with backoff
-   */
   private reconnect() {
     if (this.isReconnecting) return;
     this.isReconnecting = true;
-    console.log('[EXCHANGE] Reconnecting to Hyperliquid in 3 seconds...');
+    const delay = this.reconnectAttempts * 1000;
+    const maxDelay = 30000;
+    const actualDelay = Math.min(delay, maxDelay);
+    console.log(`[EXCHANGE] Reconnecting in ${actualDelay}ms (attempt ${this.reconnectAttempts})...`);
     setTimeout(() => {
+      this.isReconnecting = false;
+      this.reconnectAttempts++;
       this.connect();
-    }, 3000);
+    }, actualDelay);
   }
 
-  /**
-   * Simulated Order Placement on Hyperliquid - incorporates standard maker/taker fee structure
-   */
   public async submitSimulatedOrder(
     symbol: string,
     side: 'BUY' | 'SELL',
     price: number,
     quantity: number,
-    isMaker = true // Executing as Maker Limit orders saves 66% on Hyperliquid fees!
+    isMaker = true
   ): Promise<{ orderId: string; success: boolean; executedPrice: number; feeUsd: number }> {
+    const executionDelay = Math.floor(Math.random() * 4) + 2;
     return new Promise((resolve) => {
-      // Simulate ultra-low internal engine execution delay of 2-5ms
-      const executionDelay = Math.floor(Math.random() * 4) + 2; 
-
       setTimeout(() => {
         const orderId = 'hl-' + Math.random().toString(36).substring(2, 11).toUpperCase();
-        
-        // Fee calculations: uses Maker rate (0.01%) if limit order, otherwise Taker rate (0.03%)
         const orderValue = price * quantity;
         const feeRate = isMaker ? CONFIG.MAKER_FEE_PCT : CONFIG.TAKER_FEE_PCT;
         const feeUsd = orderValue * feeRate;
-
-        resolve({
-          orderId,
-          success: true,
-          executedPrice: price,
-          feeUsd
-        });
+        resolve({ orderId, success: true, executedPrice: price, feeUsd });
       }, executionDelay);
     });
   }
 
-  /**
-   * Fetch historical candles from Hyperliquid REST API
-   */
-  public async getCandleSnapshot(coin: string, interval: string, limit = 10): Promise<any[]> {
+  public async getCandleSnapshot(coin: string, interval: string, limit = 10): Promise<CandleSnapshot[]> {
     const url = `${CONFIG.HYPERLIQUID_REST_URL}/info`;
     const now = Date.now();
     let intervalMs = 60 * 1000;
@@ -166,17 +154,10 @@ export class ExchangeConnector {
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'candleSnapshot',
-          req: {
-            coin,
-            interval,
-            startTime,
-            endTime: now
-          }
+          req: { coin, interval, startTime, endTime: now }
         })
       });
 
@@ -201,25 +182,12 @@ export class ExchangeConnector {
     }
   }
 
-  /**
-   * Production Hyperliquid Order Execution placeholder.
-   * In Hyperliquid, executing live trades requires:
-   * 1. Setting up an Ethereum wallet with the wallet private key.
-   * 2. Signing the order payload using the Ethereum private key according to EIP-712.
-   * 3. POSTing to the `/exchange` endpoint of the Hyperliquid REST API.
-   */
-  public async submitLiveOrder(
-    symbol: string,
-    side: 'BUY' | 'SELL',
-    quantity: number
-  ): Promise<any> {
+  public async submitLiveOrder(symbol: string, side: 'BUY' | 'SELL', quantity: number): Promise<any> {
     if (!CONFIG.WALLET_PRIVATE_KEY) {
       throw new Error('[EXCHANGE] Cannot execute live Hyperliquid trade: WALLET_PRIVATE_KEY is missing.');
     }
-    
     console.log(`[EXCHANGE] [LIVE ORDER] Sending ${side} signed order for ${quantity} ${symbol} perp to Hyperliquid...`);
-    // Full production implementation would sign the order utilizing ethers or viem, 
-    // construct the JSON-RPC request and post to https://api.hyperliquid.xyz/exchange.
     return { success: false, error: 'Live trade not active. Turn on simulation.' };
   }
 }
+

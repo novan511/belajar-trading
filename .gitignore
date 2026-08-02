@@ -1,11 +1,10 @@
+*.db
+*.db-shm
+*.db-wal
+*.log
+trades_archive_*.json
 node_modules/
 dist/
 .env
-hft_debug.log
-logs.txt
 system_state.json
-trades_archive*.json
-trades_memory*.json
-*.log
-.DS_Store
-Thumbs.db
+hft_debug.log

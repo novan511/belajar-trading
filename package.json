@@ -10,11 +10,14 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.111.0",
+    "better-sqlite3": "^12.10.0",
     "dotenv": "^16.4.5",
     "ws": "^8.18.0",
     "@supabase/supabase-js": "^2.49.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.12.7",
     "@types/ws": "^8.5.10",
     "tsx": "^4.7.2",

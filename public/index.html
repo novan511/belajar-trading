@@ -693,11 +693,45 @@
       h1 {
         font-size: 18px;
       }
+      .nav-links {
+        flex-direction: column !important;
+        width: 100% !important;
+      }
+      .nav-links a {
+        padding: 10px 14px !important;
+        font-size: 14px !important;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        padding: 10px;
+        gap: 12px;
+      }
+      .metrics-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .metric-card {
+        padding: 14px;
+        border-radius: 12px;
+      }
+      .metric-value {
+        font-size: 18px !important;
+      }
+      h1 {
+        font-size: 16px;
+      }
+      .brand-sub {
+        font-size: 9px !important;
+      }
+      .tabs-grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
-<body>
-  <div class="container">
+  <body>
+    <div class="container">
     
     <!-- HEADER PANEL -->
     <header id="header-bar">
@@ -709,30 +743,23 @@
         </div>
       </div>
       
-      <div class="system-status">
-        <div class="status-item">
-          <span class="status-label">Engine Status:</span>
-          <div class="logo-glow" style="width: 8px; height: 8px; background: var(--neon-cyan); box-shadow: 0 0 10px var(--neon-cyan);"></div>
-          <span class="status-value" style="color: var(--neon-cyan);">ONLINE</span>
-        </div>
-        <div class="status-item">
-          <span class="status-label">Mode:</span>
-          <span class="status-value sim" id="run-mode">SIMULATION</span>
-        </div>
-        <div class="status-item">
-          <span class="status-label">WS Flow:</span>
-          <div class="heartbeat-led" id="flow-led"></div>
-          <span class="status-value" id="ticks-count">0 ticks</span>
-        </div>
-        <div class="switch-container">
-          <span class="switch-label" id="system-status-text">SYSTEM ACTIVE</span>
-          <label class="switch">
-            <input type="checkbox" id="system-toggle-checkbox" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-      </div>
-    </header>
+       <div class="nav-links" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+         <a href="/" style="color:var(--neon-cyan);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);">Dashboard</a>
+         <a href="/performance" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Performance Lab</a>
+         <a href="/thinking-hub" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Thinking Hub</a>
+       </div>
+       <div class="system-status">
+         <div class="status-item">
+           <span class="status-label">Run Mode</span>
+           <span class="status-value sim" id="run-mode">LIVE SIMULATION</span>
+         </div>
+         <div class="status-item">
+           <span class="status-label">Engine Status</span>
+           <span class="status-value" id="engine-status">ACTIVE</span>
+         </div>
+         <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--neon-cyan); box-shadow: 0 0 16px var(--neon-cyan);" id="heartbeat-led"></div>
+       </div>
+     </header>
 
     <!-- CRYPTO MARKET INTELLIGENCE BAR -->
     <div class="panel" style="margin-bottom: 0px; padding: 16px 24px;">
@@ -896,7 +923,7 @@
     <!-- PANEL C: AI THINKING HUB -->
     <div class="panel" style="margin-top: 20px;">
       <div class="panel-header">
-        <h2 class="panel-title" id="ai-insights-title">NVIDIA NIM AI Observer Thinking Hub <span id="ai-insights-model-badge">Llama 8B Active</span></h2>
+        <h2 class="panel-title">NVIDIA NIM AI Observer Thinking Hub <span id="ai-insights-model-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);color:var(--cyan);">Llama 8B Active</span></h2>
       </div>
       <div style="min-height: 100px; padding: 5px 0;">
         <div id="ai-insights-container" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
@@ -906,6 +933,14 @@
           <div class="empty-icon">🧠</div>
           <p>Observer is evaluating session telemetry...</p>
           <p style="font-size: 12px; color: var(--text-muted);">AI runs parameter optimizations and sends market intelligence updates every 3 minutes.</p>
+        </div>
+      </div>
+
+      <!-- MARKET CATEGORY OVERVIEW -->
+      <div style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 14px;">
+        <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;">📡 Market Screening — AI Observer Coverage</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;" id="market-categories">
+          <!-- Filled by JS -->
         </div>
       </div>
     </div>
@@ -923,40 +958,21 @@
     let currentModelId = 'Llama_8B';
 
     const modelConfigs = {
-      Llama_8B: { label: 'Llama 3.1 8B (AI)', color: '#00f2fe' },
-      Nemotron_70B: { label: 'Nemotron 70B (AI)', color: '#ffd600' },
-      Mistral_Large: { label: 'Mistral Large (AI)', color: '#a000ff' },
-      Llama_70B: { label: 'Llama 3.1 70B (AI)', color: '#00ff87' },
-      Static_Base: { label: 'Static Base (Control)', color: '#ff2a5f' },
-      Gemini_Pro: { label: 'Gemini Pro (AI)', color: '#ff7f00' }
+      Llama_8B: { label: 'Llama 3.1 8B', color: '#00f2fe' }
     };
 
-    const flowLed = document.getElementById('flow-led');
-    const ticksCount = document.getElementById('ticks-count');
+    const MARKET_CATEGORIES = {
+      crypto: { label: 'Crypto', color: '#00f2fe', assets: ['BTC','ETH','SOL','SUI','XRP','HYPE','DOGE','NEAR','FET'] },
+      commodity: { label: 'Commodity (Oil)', color: '#ffd600', assets: ['WTIOIL'] },
+      stock: { label: 'US Stock', color: '#a000ff', assets: ['AAPL','AMAT','NVDA','TSLA','GOOGL','MSFT','META','AMZN','NFLX','COIN'] }
+    };
+
     const headerBar = document.getElementById('header-bar');
-    const toggleCheckbox = document.getElementById('system-toggle-checkbox');
-    const systemStatusText = document.getElementById('system-status-text');
-
-    if (toggleCheckbox) {
-      toggleCheckbox.addEventListener('change', () => {
-        sendToggleSystemStatus();
-      });
-    }
-
-    function sendToggleSystemStatus() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'toggle_system_status'
-        }));
-      }
-    }
 
     function triggerLedFlash() {
-      flowLed.classList.add('tick');
       headerBar.classList.add('heartbeat-active');
       
       setTimeout(() => {
-        flowLed.classList.remove('tick');
         headerBar.classList.remove('heartbeat-active');
       }, 80);
     }
@@ -967,7 +983,6 @@
         
         if (payload.type === 'heartbeat') {
           triggerLedFlash();
-          ticksCount.innerText = `${payload.tickCount.toLocaleString()} ticks`;
           return;
         }
 
@@ -1225,19 +1240,6 @@
       document.getElementById('selected-model-label-net').innerText = `Net Profit (${modelConfigs[currentModelId].label})`;
 
       // Update system active toggle
-      if (toggleCheckbox) {
-        toggleCheckbox.checked = data.isTradingActive;
-      }
-      if (systemStatusText) {
-        if (data.isTradingActive) {
-          systemStatusText.innerText = 'SYSTEM ACTIVE';
-          systemStatusText.style.color = 'var(--neon-cyan)';
-        } else {
-          systemStatusText.innerText = 'SYSTEM PAUSED';
-          systemStatusText.style.color = 'var(--neon-red)';
-        }
-      }
-
       // 1. Update Mode
       document.getElementById('run-mode').innerText = data.simMode ? 'LIVE SIMULATION' : 'LIVE TRADING';
       document.getElementById('run-mode').className = `status-value ${data.simMode ? 'sim' : ''}`;
@@ -1366,61 +1368,160 @@
 
       aiContainer.innerHTML = '';
       
-      const insights = currentModel.aiInsights || {};
-      if (Object.keys(insights).length === 0) {
+       const insights = currentModel.aiInsights || {};
+       const tradesHistory = currentModel.tradesHistory || [];
+
+      if (Object.keys(insights).length === 0 && activePos.length === 0 && tradesHistory.length === 0) {
         aiEmpty.style.display = 'flex';
       } else {
         aiEmpty.style.display = 'none';
         
-        Object.entries(insights).forEach(([symbol, insight]) => {
-          const biasClass = insight.bias ? insight.bias.toLowerCase() : 'neutral';
-          const biasVal = insight.bias || 'NEUTRAL';
-          const confVal = insight.confidence || 50;
-          const rationaleVal = insight.rationale || 'Evaluating market condition...';
+        const entries = Object.keys(insights).length > 0 ? Object.entries(insights) : null;
+        if (entries) {
+          Object.entries(insights).forEach(([symbol, insight]) => {
+            const biasClass = insight.bias ? insight.bias.toLowerCase() : 'neutral';
+            const biasVal = insight.bias || 'NEUTRAL';
+            const confVal = insight.confidence || 50;
+            const rationaleVal = insight.rationale || 'Evaluating market condition...';
+
+            const card = document.createElement('div');
+            card.className = 'ai-card';
+            card.style.cursor = 'pointer';
+            card.title = 'Klik untuk lihat detail analisis ' + symbol + ' di Thinking Hub';
+            card.onclick = () => {
+              window.open('/thinking-hub?symbol=' + symbol, '_blank');
+            };
+            card.innerHTML = `
+              <div class="ai-header">
+                <span class="ai-coin">${symbol}</span>
+                <span class="ai-bias ${biasClass}">${biasVal}</span>
+              </div>
+              
+              <div class="ai-confidence-container">
+                <span class="ai-confidence-label">Confidence: ${confVal}%</span>
+                <div class="ai-confidence-bar">
+                  <div class="ai-confidence-fill" style="width: ${confVal}%; background: ${modelColor};"></div>
+                </div>
+              </div>
+              
+              <div class="ai-rationale" style="margin-bottom: 8px;">
+                <strong>Rasional:</strong> "${rationaleVal}"
+              </div>
+              ${insight.current_thoughts ? `
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
+                <strong>Thinking:</strong> ${insight.current_thoughts}
+              </div>` : ''}
+              ${insight.planned_action ? `
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
+                <strong>Action:</strong> ${insight.planned_action}
+              </div>` : ''}
+              ${insight.waiting_for ? `
+              <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
+                <strong>Waiting:</strong> ${insight.waiting_for}
+              </div>` : ''}
+              ${insight.post_algorithm_thoughts ? `
+              <div style="font-size: 11px; color: var(--text-muted); padding-left: 6px; border-left: 2px solid ${modelColor};">
+                <strong>Post-Algo:</strong> ${insight.post_algorithm_thoughts}
+              </div>` : ''}
+            `;
+            aiContainer.appendChild(card);
+          });
+        }
+
+        if (!entries) {
+          const fallbackSymbols = new Set();
+          activePos.forEach(p => fallbackSymbols.add(p.symbol));
+          tradesHistory.slice(-10).forEach(t => fallbackSymbols.add(t.symbol));
+
+          if (fallbackSymbols.size === 0) {
+            aiEmpty.style.display = 'flex';
+            return;
+          }
+
+          const wins = tradesHistory.filter(t => t.result === 'WIN').length;
+          const losses = tradesHistory.filter(t => t.result === 'LOSS').length;
+          const total = tradesHistory.length;
+          const wr = total > 0 ? ((wins / total) * 100).toFixed(1) : '0.0';
+          const netPnl = tradesHistory.reduce((s, t) => s + (parseFloat(t.netProfitUsd) || 0), 0);
 
           const card = document.createElement('div');
           card.className = 'ai-card';
-          card.style.cursor = 'pointer';
-          card.title = 'Klik untuk lihat detail analisis ' + symbol + ' di Thinking Hub';
-          card.onclick = () => {
-            window.open('/thinking-hub?symbol=' + symbol, '_blank');
-          };
+          card.style.borderLeft = `3px solid ${modelColor}`;
           card.innerHTML = `
             <div class="ai-header">
-              <span class="ai-coin">${symbol}</span>
-              <span class="ai-bias ${biasClass}">${biasVal}</span>
+              <span class="ai-coin">🤖 Bot Active</span>
+              <span class="ai-bias neutral">LIVE</span>
             </div>
-            
             <div class="ai-confidence-container">
-              <span class="ai-confidence-label">Confidence: ${confVal}%</span>
+              <span class="ai-confidence-label">Win Rate: ${wr}% | Trades: ${total}</span>
               <div class="ai-confidence-bar">
-                <div class="ai-confidence-fill" style="width: ${confVal}%; background: ${modelColor};"></div>
+                <div class="ai-confidence-fill" style="width: ${Math.min(100, Math.max(0, parseFloat(wr)))}%; background: ${parseFloat(wr) >= 50 ? 'var(--neon-green)' : 'var(--neon-red)'};"></div>
               </div>
             </div>
-            
             <div class="ai-rationale" style="margin-bottom: 8px;">
-              <strong>Rasional:</strong> "${rationaleVal}"
+              <strong>Status:</strong> Trading aktif — ${activePos.length} posisi terbuka. Net P&L: ${formatUsd(netPnl)}.
             </div>
-            ${insight.current_thoughts ? `
             <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
-              <strong>Thinking:</strong> ${insight.current_thoughts}
-            </div>` : ''}
-            ${insight.planned_action ? `
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
-              <strong>Action:</strong> ${insight.planned_action}
-            </div>` : ''}
-            ${insight.waiting_for ? `
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; padding-left: 6px; border-left: 2px solid ${modelColor};">
-              <strong>Waiting:</strong> ${insight.waiting_for}
-            </div>` : ''}
-            ${insight.post_algorithm_thoughts ? `
+              <strong>Thinking:</strong> Menunggu respons AI Observer untuk analisis simbol (${Array.from(fallbackSymbols).slice(0, 5).join(', ')}${fallbackSymbols.size > 5 ? '...' : ''}). Optimasi parameter berjalan setiap 3 menit.
+            </div>
             <div style="font-size: 11px; color: var(--text-muted); padding-left: 6px; border-left: 2px solid ${modelColor};">
-              <strong>Post-Algo:</strong> ${insight.post_algorithm_thoughts}
-            </div>` : ''}
+              <strong>Action:</strong> Sistem trading berjalan normal. AI insights akan muncul setelah NVIDIA NIM API merespons.
+            </div>
           `;
           aiContainer.appendChild(card);
-        });
+        }
       }
+
+      // 6. Render market category overview
+      renderMarketCategories(currentModel);
+    }
+
+    function renderMarketCategories(currentModel) {
+      const container = document.getElementById('market-categories');
+      if (!container) return;
+
+      const insights = currentModel.aiInsights || {};
+      const activePos = currentModel.activePositions || [];
+      const tradesHistory = currentModel.tradesHistory || [];
+
+      const activeSymbols = new Set();
+      activePos.forEach(p => activeSymbols.add(p.symbol));
+      tradesHistory.slice(-20).forEach(t => activeSymbols.add(t.symbol));
+
+      let html = '';
+      for (const [catType, catConfig] of Object.entries(MARKET_CATEGORIES)) {
+        const catColor = catConfig.color;
+        const assets = catConfig.assets;
+
+        const assetCards = assets.map(asset => {
+          const hasInsight = insights[asset];
+          const isActive = activeSymbols.has(asset);
+          const bias = hasInsight ? insights[asset].bias : 'NEUTRAL';
+          const conf = hasInsight ? insights[asset].confidence : 0;
+          const biasColor = bias === 'BULLISH' ? 'var(--neon-green)' : bias === 'BEARISH' ? 'var(--neon-red)' : 'var(--neon-gold)';
+          const statusLabel = isActive ? '● LIVE' : hasInsight ? '● ANALYZED' : '○ MONITORING';
+          const statusColor = isActive ? 'var(--neon-green)' : hasInsight ? catColor : 'var(--text-3)';
+
+          return `
+            <div style="padding:8px 10px;background:${isActive ? 'rgba(0,242,254,0.06)' : 'rgba(255,255,255,0.02)'};border:1px solid ${isActive ? 'rgba(0,242,254,0.25)' : 'rgba(255,255,255,0.05)'};border-radius:8px;cursor:pointer;transition:.2s;" onclick="window.open('/thinking-hub?symbol=${asset}','_blank')">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+                <span style="font-size:11px;font-weight:700;color:var(--text-1);">${asset}</span>
+                <span style="font-size:9px;font-weight:600;color:${statusColor};">${statusLabel}</span>
+              </div>
+              <div style="font-size:10px;color:${biasColor};font-weight:600;">${bias} ${conf > 0 ? conf + '%' : ''}</div>
+            </div>
+          `;
+        }).join('');
+
+        html += `
+          <div style="background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.04);border-radius:12px;padding:12px;">
+            <div style="font-size:10px;font-weight:700;color:${catColor};text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">${catConfig.label}</div>
+            <div style="display:flex;flex-direction:column;gap:5px;">${assetCards}</div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
     }
   </script>
 </body>

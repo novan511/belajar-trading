@@ -3,12 +3,10 @@ import { RiskManager } from './risk_manager.js';
 import fs from 'fs';
 import path from 'path';
 export class ExecutionEngine {
-    activePositions = new Map(); // Key is symbol, value is array of positions
+    activePositions = new Map();
     tradesHistory = [];
     exchange;
-    // NEW: Risk Manager instance
     riskManager;
-    // Track Stats
     stats = {
         totalTrades: 0,
         winningTrades: 0,
@@ -20,12 +18,14 @@ export class ExecutionEngine {
         averageHoldTimeSec: 0
     };
     tradeMemory;
+    database = null;
     modelId;
-    constructor(modelId, exchange, tradeMemory) {
+    constructor(modelId, exchange, tradeMemory, database) {
         this.modelId = modelId;
         this.exchange = exchange;
         this.tradeMemory = tradeMemory;
-        this.riskManager = new RiskManager(); // NEW
+        this.database = database || null;
+        this.riskManager = new RiskManager();
         this.loadTradesArchive();
     }
     /**
@@ -245,8 +245,7 @@ export class ExecutionEngine {
             stopLossPrice = entryPrice * (1 + coinConfig.stopLossPct);
             takeProfitPrice = entryPrice * (1 - coinConfig.takeProfitPct);
         }
-        // NEW: Dynamic position sizing using RiskManager (Kelly + ATR)
-        const atr = 0; // Will be populated if available from MarketRegime via strategy
+        const atr = this.riskManager.getATR(signal.symbol);
         const quantity = this.riskManager.calculatePositionSize(this.stats, signal.symbol, atr, entryPrice, stopLossPrice, signal.confidence);
         if (quantity <= 0)
             return;
@@ -255,7 +254,7 @@ export class ExecutionEngine {
             const order = await this.exchange.submitSimulatedOrder(signal.symbol, signal.side, entryPrice, quantity);
             if (order.success) {
                 // NEW: Setup partial take-profit levels (scale out)
-                const partialTPs = this.createPartialTPLevels(signal.side, entryPrice, takeProfitPrice);
+                const partialTPs = this.createPartialTPLevels(signal.symbol, signal.side, entryPrice, takeProfitPrice);
                 const position = {
                     id: order.orderId,
                     symbol: signal.symbol,
@@ -293,8 +292,8 @@ export class ExecutionEngine {
      * TP2: Close 30% of position at 1.5x original TP
      * TP3: Let remaining 40% run with trailing stop
      */
-    createPartialTPLevels(side, entryPrice, baseTP) {
-        const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === side);
+    createPartialTPLevels(symbol, side, entryPrice, baseTP) {
+        const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === symbol);
         const tpRange = Math.abs(baseTP - entryPrice);
         return [
             {
@@ -407,6 +406,9 @@ export class ExecutionEngine {
         this.saveTradesArchive();
         if (this.tradeMemory) {
             this.tradeMemory.add(record);
+        }
+        if (this.database) {
+            this.database.saveTrade(record);
         }
         // NEW: Update RiskManager
         this.riskManager.updateBalance(netProfit, position.symbol, result);
