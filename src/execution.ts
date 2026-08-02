@@ -276,8 +276,7 @@ export class ExecutionEngine {
       takeProfitPrice = entryPrice * (1 - coinConfig.takeProfitPct);
     }
 
-    // NEW: Dynamic position sizing using RiskManager (Kelly + ATR)
-    const atr = 0; // Will be populated if available from MarketRegime via strategy
+    const atr = this.riskManager.getATR(signal.symbol);
     const quantity = this.riskManager.calculatePositionSize(
       this.stats,
       signal.symbol,
@@ -296,7 +295,7 @@ export class ExecutionEngine {
       
       if (order.success) {
         // NEW: Setup partial take-profit levels (scale out)
-        const partialTPs = this.createPartialTPLevels(signal.side, entryPrice, takeProfitPrice);
+        const partialTPs = this.createPartialTPLevels(signal.symbol, signal.side, entryPrice, takeProfitPrice);
 
         const position: Position = {
           id: order.orderId,
@@ -336,8 +335,8 @@ export class ExecutionEngine {
    * TP2: Close 30% of position at 1.5x original TP
    * TP3: Let remaining 40% run with trailing stop
    */
-  private createPartialTPLevels(side: Side, entryPrice: number, baseTP: number): { pct: number; targetPx: number; isTriggered: boolean }[] {
-    const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === side);
+  private createPartialTPLevels(symbol: string, side: Side, entryPrice: number, baseTP: number): { pct: number; targetPx: number; isTriggered: boolean }[] {
+    const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === symbol);
     const tpRange = Math.abs(baseTP - entryPrice);
     
     return [

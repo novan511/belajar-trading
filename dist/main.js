@@ -10,14 +10,40 @@ import { calculateFibonacci, calculateFVGs, calculateSRLevels, calculatePOC } fr
 import { TradeMemory } from './trade_memory.js';
 import { TradeDatabase } from './database.js';
 import { circuitBreaker } from './circuit_breaker.js';
+import { AITradeAnalyzer } from './ai_trade_analyzer.js';
 import { SmartOrderRouter } from './smart_order_routing.js';
 // Setup file debug logging to bypass console.clear() wiping diagnostic history
 const logFilePath = path.join(process.cwd(), 'hft_debug.log');
-fs.writeFileSync(logFilePath, `[SYSTEM] --- HFT Bot Startup Debug Log | ${new Date().toISOString()} ---\n`);
+const MAX_LOG_SIZE = 5 * 1024 * 1024;
+const MAX_LOG_FILES = 5;
+function rotateLogIfNeeded() {
+    try {
+        if (!fs.existsSync(logFilePath))
+            return;
+        const stat = fs.statSync(logFilePath);
+        if (stat.size < MAX_LOG_SIZE)
+            return;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const archivedPath = path.join(process.cwd(), `hft_debug_${timestamp}.log`);
+        fs.renameSync(logFilePath, archivedPath);
+        const files = fs.readdirSync(process.cwd())
+            .filter(f => f.startsWith('hft_debug_') && f.endsWith('.log'))
+            .sort()
+            .reverse();
+        for (let i = MAX_LOG_FILES; i < files.length; i++) {
+            try {
+                fs.unlinkSync(path.join(process.cwd(), files[i]));
+            }
+            catch { }
+        }
+    }
+    catch { }
+}
 function logDebug(message) {
+    rotateLogIfNeeded();
     const time = new Date().toLocaleTimeString();
     const logMsg = `[${time}] ${message}\n`;
-    fs.appendFileSync(logFilePath, logMsg);
+    fs.appendFile(logFilePath, logMsg, () => { });
 }
 // Global Exception Catching to record silent failures
 process.on('uncaughtException', (err) => {
@@ -71,7 +97,8 @@ async function main() {
             database
         };
         latestAiInsights[modelId] = {};
-        // Load active positions dari database setelah restart
+        // Load active positions from Supabase, then local SQLite
+        await database.loadPositionsFromSupabase();
         const savedPositions = database.getAllActivePositions();
         if (savedPositions.length > 0) {
             logDebug(`[DATABASE] Restored ${savedPositions.length} active positions for ${modelId} from SQLite`);
@@ -86,6 +113,78 @@ async function main() {
         }
         return { runners, models };
     });
+    // AI Continuous Learning: Auto-tuning and session-based learning
+    if (CONFIG.AI_LEARNING_ENABLED) {
+        const aiAnalyzer = new AITradeAnalyzer();
+        // Auto-parameter tuning check every 5 minutes
+        setInterval(() => {
+            for (const [modelId, model] of Object.entries(models)) {
+                const trades = model.execution.getTradesHistory();
+                if (trades.length < CONFIG.AI_AUTO_TUNING_MIN_TRADES)
+                    continue;
+                const analysis = aiAnalyzer.analyze(trades, null);
+                const tuning = analysis.autoTuning;
+                if (tuning.confidence === 'HIGH' && CONFIG.AI_AUTO_TUNING_ENABLED) {
+                    if (tuning.recommendedObiThreshold !== null) {
+                        CONFIG.SYMBOLS.BTC.obiThreshold = tuning.recommendedObiThreshold;
+                        logDebug(`[AI AUTO-TUNING] OBV threshold adjusted to ${tuning.recommendedObiThreshold.toFixed(2)}`);
+                    }
+                    if (tuning.recommendedZScoreThreshold !== null) {
+                        CONFIG.SYMBOLS.BTC.zScoreThreshold = tuning.recommendedZScoreThreshold;
+                        logDebug(`[AI AUTO-TUNING] Z-score threshold adjusted to ${tuning.recommendedZScoreThreshold.toFixed(2)}`);
+                    }
+                    if (tuning.recommendedTakeProfitPct !== null) {
+                        CONFIG.SYMBOLS.BTC.takeProfitPct = tuning.recommendedTakeProfitPct;
+                        logDebug(`[AI AUTO-TUNING] Take profit adjusted to ${(tuning.recommendedTakeProfitPct * 100).toFixed(2)}%`);
+                    }
+                    if (tuning.recommendedStopLossPct !== null) {
+                        CONFIG.SYMBOLS.BTC.stopLossPct = tuning.recommendedStopLossPct;
+                        logDebug(`[AI AUTO-TUNING] Stop loss adjusted to ${(tuning.recommendedStopLossPct * 100).toFixed(2)}%`);
+                    }
+                    // Save parameter snapshot to database
+                    model.database.saveParameterSnapshot('BTC', CONFIG.SYMBOLS.BTC, {
+                        winRate: analysis.winRate,
+                        profitFactor: analysis.profitFactor,
+                        netProfitUsd: analysis.netProfitUsd,
+                        tradeCount: analysis.totalTrades,
+                    }, 'auto-tune');
+                }
+                // Session-based learning
+                if (CONFIG.AI_SESSION_LEARNING_ENABLED && analysis.sessionAnalysis) {
+                    const sessionAnalysis = analysis.sessionAnalysis;
+                    if (sessionAnalysis.shouldPauseSession) {
+                        const pauseHour = parseInt(sessionAnalysis.shouldPauseSession.replace('UTC ', '').replace(':00', ''));
+                        const currentHour = new Date().getUTCHours();
+                        if (currentHour === pauseHour && isTradingActive) {
+                            isTradingActive = false;
+                            logDebug(`[AI SESSION LEARNING] Auto-pausing trading at ${sessionAnalysis.shouldPauseSession} (low win rate session)`);
+                            try {
+                                fs.writeFileSync(stateFilePath, JSON.stringify({ isTradingActive: false }, null, 2), 'utf-8');
+                            }
+                            catch { }
+                        }
+                    }
+                    // Save session performance
+                    const bySession = {};
+                    for (const t of trades) {
+                        const session = new Date(t.entryTime).getUTCHours();
+                        const sessionName = `UTC ${String(session).padStart(2, '0')}:00`;
+                        if (!bySession[sessionName])
+                            bySession[sessionName] = { trades: 0, wins: 0, losses: 0, netProfit: 0 };
+                        bySession[sessionName].trades++;
+                        if (t.result === 'WIN')
+                            bySession[sessionName].wins++;
+                        else if (t.result === 'LOSS')
+                            bySession[sessionName].losses++;
+                        bySession[sessionName].netProfit += t.netProfitUsd;
+                    }
+                    for (const [session, data] of Object.entries(bySession)) {
+                        model.database.saveSessionPerformance(session, data.trades, data.wins, data.losses, data.netProfit);
+                    }
+                }
+            }
+        }, CONFIG.AI_AUTO_TUNING_INTERVAL_MS);
+    }
     // Load system active status from persistent file system_state.json
     let isTradingActive = true;
     const stateFilePath = path.join(process.cwd(), 'system_state.json');
@@ -265,12 +364,14 @@ async function main() {
                     }
                     logDebug(`[SIGNAL GENERATED] [${modelId}] ${signal.symbol} | ${signal.side} | Price: ${signal.price} | Reason: ${signal.reason}`);
                     model.execution.executeSignal(signal).then(() => {
-                        // NEW: Save position snapshot to database
+                        // Save position snapshot to database
                         const positions = model.execution.getActivePositions();
                         for (const pos of positions.filter(p => p.symbol === signal.symbol)) {
                             model.database.savePosition(pos);
                         }
                         sendDashboardUpdate();
+                    }).catch((err) => {
+                        logDebug(`[EXECUTION ERROR] ${modelId} ${signal.symbol}: ${err.message}`);
                     });
                 }
             }

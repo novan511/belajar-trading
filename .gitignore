@@ -1,0 +1,10 @@
+*.db
+*.db-shm
+*.db-wal
+*.log
+trades_archive_*.json
+node_modules/
+dist/
+.env
+system_state.json
+hft_debug.log

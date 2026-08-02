@@ -135,6 +135,16 @@
       .kpis{grid-template-columns:repeat(2,1fr)}
       table{font-size:11px}th,td{padding:8px 8px}
     }
+    @media (max-width:480px){
+      .layout{padding:8px;gap:8px}
+      .kpis{grid-template-columns:1fr}
+      .kpi{padding:12px}
+      .kpi-value{font-size:20px}
+      .pill{font-size:11px}
+      .top-bar{padding:10px}
+      .split{grid-template-columns:1fr}
+      table{font-size:10px}th,td{padding:6px 6px}
+    }
   </style>
 </head>
 <body>
@@ -161,7 +171,7 @@
       <div class="nav-card">
         <div class="nav-title">Model</div>
         <div class="model-chips" id="model-chips">
-          <div class="chip active" style="cursor:default"><div><div class="chip-name">Llama 3.1 8B</div></div><div class="chip-pnl" style="color:var(--cyan)" id="chip-pnl-ALL">$0</div></div>
+          <div class="chip active" data-model="ALL" style="cursor:default"><div><div class="chip-name">Llama 3.1 8B</div></div><div class="chip-pnl" style="color:var(--cyan)" id="chip-pnl-ALL">$0</div></div>
         </div>
       </div>
       <div class="nav-card">
@@ -257,20 +267,73 @@
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <div class="panel-title">AI Insights — Pattern Recognition &amp; Learning</div>
-          <div class="badge">Analyzer</div>
-        </div>
-        <div id="ai-container">
-          <div class="empty-state" id="ai-empty"><div class="empty-icon">🧠</div><p>Loading analysis...</p></div>
-        </div>
-      </div>
+       <div class="panel">
+         <div class="panel-head">
+           <div class="panel-title">🤖 AI Auto-Tuning Recommendations</div>
+           <div class="badge" id="tuning-badge">AUTO</div>
+         </div>
+         <div id="tuning-container">
+           <div class="empty-state" id="tuning-empty"><div class="empty-icon">⚙️</div><p>Analyzing performance trends for parameter optimization...</p></div>
+         </div>
+       </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <div class="panel-title">Trade History</div>
-          <div class="filter-bar">
+       <div class="panel">
+         <div class="panel-head">
+           <div class="panel-title">📊 Session Performance Analysis</div>
+           <div class="badge">Learning</div>
+         </div>
+         <div id="session-container">
+           <div class="empty-state" id="session-empty"><div class="empty-icon">🕐</div><p>Analyzing session performance...</p></div>
+         </div>
+       </div>
+
+       <div class="panel">
+         <div class="panel-head">
+           <div class="panel-title">AI Insights — Pattern Recognition &amp; Learning</div>
+           <div class="badge">Analyzer</div>
+         </div>
+         <div id="ai-container">
+           <div class="empty-state" id="ai-empty"><div class="empty-icon">🧠</div><p>Loading analysis...</p></div>
+         </div>
+       </div>
+
+       <div class="panel">
+         <div class="panel-head">
+           <div class="panel-title">Parameter Override</div>
+           <div class="badge">Manual Control</div>
+         </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;">
+            <div>
+              <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;">OBI Threshold</label>
+              <input type="number" id="param-obi" step="0.01" min="0" max="2" style="width:100%;padding:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-family:'Space Grotesk',sans-serif;font-size:14px;" value="0.20">
+              <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.4;">Order Book Imbalance. Minimum buy/sell pressure ratio to trigger entry. Higher = fewer trades, higher quality.</div>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;">Z-Score Threshold</label>
+              <input type="number" id="param-zscore" step="0.01" min="0" max="3" style="width:100%;padding:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-family:'Space Grotesk',sans-serif;font-size:14px;" value="0.80">
+              <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.4;">Mean reversion sensitivity. How many standard deviations from mean before considering oversold/overbought. Higher = more selective entries.</div>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;">Take Profit %</label>
+              <input type="number" id="param-tp" step="0.001" min="0" max="0.1" style="width:100%;padding:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-family:'Space Grotesk',sans-serif;font-size:14px;" value="0.015">
+              <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.4;">Profit target per trade. E.g., 0.015 = 1.5% profit. Wider TP increases win rate but reduces average profit per trade.</div>
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;">Stop Loss %</label>
+              <input type="number" id="param-sl" step="0.001" min="0" max="0.05" style="width:100%;padding:8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;color:var(--text-1);font-family:'Space Grotesk',sans-serif;font-size:14px;" value="0.005">
+              <div style="font-size:10px;color:var(--text-3);margin-top:4px;line-height:1.4;">Maximum loss per trade. Tighter SL reduces loss size but increases chance of being stopped out by noise. Risk:Reward should be 1:2 to 1:4.</div>
+            </div>
+          </div>
+         <div style="margin-top:12px;display:flex;gap:8px;">
+           <button onclick="applyParameterOverride()" style="padding:8px 16px;background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.3);border-radius:8px;color:var(--cyan);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;">Apply Override</button>
+           <button onclick="resetParameters()" style="padding:8px 16px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;color:var(--text-2);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;">Reset to Default</button>
+         </div>
+       </div>
+
+       <div class="panel">
+         <div class="panel-head">
+           <div class="panel-title">Trade History</div>
+           <div class="filter-bar">
             <select id="filter-symbol"><option value="ALL">All Symbols</option></select>
             <select id="filter-side"><option value="ALL">All Sides</option><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
             <button onclick="applyFilters()">Apply</button>
@@ -356,7 +419,7 @@
       const body = document.getElementById('extremes-body');
       const empty = document.getElementById('extremes-empty');
       body.innerHTML = '';
-      if ((!best && !worst) || (!cachedData && !cachedData?.models)) { empty.style.display = 'flex'; return; }
+      if ((!best && !worst) || !cachedData?.models) { empty.style.display = 'flex'; return; }
       empty.style.display = 'none';
 
       // collect from currently selected model trades
@@ -388,22 +451,181 @@
       });
     }
 
-    function renderAI(insights) {
-      const container = document.getElementById('ai-container');
-      const empty = document.getElementById('ai-empty');
-      if (!insights) { container.innerHTML = ''; empty.style.display = 'flex'; return; }
-      empty.style.display = 'none';
-      const card = document.createElement('div');
-      card.className = 'ai-card';
-      const tags = (arr, cls) => arr.map(x => `<span class="tag tag-${cls}">${x}</span>`).join('');
-      card.innerHTML = `<h4>${insights.summary || 'Analysis'}</h4>
-        <div style="margin-bottom:8px">${tags(insights.strengths||[],'pos')}</div>
-        <div style="margin-bottom:8px">${tags(insights.weaknesses||[],'neg')}</div>
-        <div style="margin-bottom:8px"><strong style="color:var(--text-2);font-size:12px">Patterns:</strong><div style="margin-top:4px">${tags(insights.patternNotes||[],'neu')}</div></div>
-        <div><strong style="color:var(--text-2);font-size:12px">Recommendations:</strong><ul>${(insights.recommendations||[]).map(r => `<li>${r}</li>`).join('')}</ul></div>`;
-      container.innerHTML = '';
-      container.appendChild(card);
-    }
+     function renderAI(insights) {
+       const container = document.getElementById('ai-container');
+       const empty = document.getElementById('ai-empty');
+       if (!insights) { container.innerHTML = ''; empty.style.display = 'flex'; return; }
+       empty.style.display = 'none';
+       const card = document.createElement('div');
+       card.className = 'ai-card';
+       const tags = (arr, cls) => arr.map(x => `<span class="tag tag-${cls}">${x}</span>`).join('');
+
+       const feedbackHtml = `
+         <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;">
+           <span style="font-size:11px;color:var(--text-3);">Was this helpful?</span>
+           <button onclick="submitFeedback('positive')" style="padding:4px 10px;background:rgba(0,255,135,0.1);border:1px solid rgba(0,255,135,0.2);border-radius:6px;color:var(--neon-green);font-size:11px;cursor:pointer;font-family:'Outfit',sans-serif;">👍 Accurate</button>
+           <button onclick="submitFeedback('negative')" style="padding:4px 10px;background:rgba(255,59,92,0.1);border:1px solid rgba(255,59,92,0.2);border-radius:6px;color:var(--neon-red);font-size:11px;cursor:pointer;font-family:'Outfit',sans-serif;">👎 Inaccurate</button>
+         </div>`;
+
+       card.innerHTML = `<h4>${insights.summary || 'Analysis'}</h4>
+         <div style="margin-bottom:8px">${tags(insights.strengths||[],'pos')}</div>
+         <div style="margin-bottom:8px">${tags(insights.weaknesses||[],'neg')}</div>
+         <div style="margin-bottom:8px"><strong style="color:var(--text-2);font-size:12px">Patterns:</strong><div style="margin-top:4px">${tags(insights.patternNotes||[],'neu')}</div></div>
+         <div><strong style="color:var(--text-2);font-size:12px">Recommendations:</strong><ul>${(insights.recommendations||[]).map(r => `<li>${r}</li>`).join('')}</ul></div>
+         ${feedbackHtml}`;
+       container.innerHTML = '';
+       container.appendChild(card);
+     }
+
+     function renderAutoTuning(tuning) {
+       const container = document.getElementById('tuning-container');
+       const empty = document.getElementById('tuning-empty');
+       if (!tuning) { container.innerHTML = ''; empty.style.display = 'flex'; return; }
+       empty.style.display = 'none';
+
+       const badge = document.getElementById('tuning-badge');
+       if (tuning.confidence === 'HIGH') {
+         badge.textContent = 'HIGH CONFIDENCE';
+         badge.style.background = 'rgba(0,255,135,0.1)';
+         badge.style.color = 'var(--neon-green)';
+         badge.style.borderColor = 'rgba(0,255,135,0.2)';
+       } else if (tuning.confidence === 'LOW') {
+         badge.textContent = 'LOW CONFIDENCE';
+         badge.style.background = 'rgba(255,214,0,0.1)';
+         badge.style.color = 'var(--neon-gold)';
+         badge.style.borderColor = 'rgba(255,214,0,0.2)';
+       } else {
+         badge.textContent = 'NO DATA';
+         badge.style.background = 'rgba(255,255,255,0.04)';
+         badge.style.color = 'var(--text-3)';
+         badge.style.borderColor = 'var(--border)';
+       }
+
+       const params = [];
+       if (tuning.recommendedObiThreshold !== null) params.push(`OBI Threshold → <strong>${tuning.recommendedObiThreshold.toFixed(2)}</strong>`);
+       if (tuning.recommendedZScoreThreshold !== null) params.push(`Z-Score → <strong>${tuning.recommendedZScoreThreshold.toFixed(2)}</strong>`);
+       if (tuning.recommendedTakeProfitPct !== null) params.push(`TP% → <strong>${(tuning.recommendedTakeProfitPct * 100).toFixed(2)}%</strong>`);
+       if (tuning.recommendedStopLossPct !== null) params.push(`SL% → <strong>${(tuning.recommendedStopLossPct * 100).toFixed(2)}%</strong>`);
+
+       container.innerHTML = `
+         <div style="margin-bottom:8px;font-size:12px;color:var(--text-2);line-height:1.6">${tuning.reason}</div>
+         ${params.length > 0 ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${params.map(p => `<span class="tag tag-pos">${p}</span>`).join('')}</div>` : '<div style="font-size:12px;color:var(--text-3)">No parameter adjustments recommended at this time.</div>'}
+       `;
+     }
+
+     function renderSessionAnalysis(sessionAnalysis) {
+       const container = document.getElementById('session-container');
+       const empty = document.getElementById('session-empty');
+       if (!sessionAnalysis) { container.innerHTML = ''; empty.style.display = 'flex'; return; }
+       empty.style.display = 'none';
+
+       let pauseAlert = '';
+       if (sessionAnalysis.shouldPauseSession) {
+         pauseAlert = `<div style="padding:8px 12px;background:rgba(255,59,92,0.08);border:1px solid rgba(255,59,92,0.15);border-radius:8px;margin-bottom:10px;font-size:12px;color:var(--neon-red);">
+           ⚠️ Auto-pause recommended at ${sessionAnalysis.shouldPauseSession} (low win rate session)
+         </div>`;
+       }
+
+       container.innerHTML = `
+         ${pauseAlert}
+         <div style="font-size:12px;color:var(--text-2);line-height:1.6">
+           <strong>Best Session:</strong> ${sessionAnalysis.bestSession || 'N/A'}<br>
+           <strong>Worst Session:</strong> ${sessionAnalysis.worstSession || 'N/A'}<br>
+           <div style="margin-top:6px;color:var(--text-1);">${sessionAnalysis.recommendation || 'No session insights yet.'}</div>
+         </div>
+       `;
+     }
+
+     async function submitFeedback(type) {
+       try {
+         const res = await fetch('/api/ai-feedback', {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({ type, rating: type === 'positive' ? 1 : -1 }),
+         });
+         if (res.ok) {
+           const card = document.querySelector('.ai-card');
+           if (card) {
+             const fb = document.createElement('div');
+             fb.style.cssText = 'margin-top:8px;padding:6px 10px;background:rgba(0,255,135,0.08);border:1px solid rgba(0,255,135,0.15);border-radius:6px;font-size:11px;color:var(--neon-green);';
+             fb.textContent = type === 'positive' ? '✅ Feedback recorded — thank you!' : '❌ Feedback recorded — we will improve.';
+             card.appendChild(fb);
+           }
+         }
+       } catch {}
+     }
+
+      async function applyParameterOverride() {
+        const obi = parseFloat(document.getElementById('param-obi').value);
+        const zscore = parseFloat(document.getElementById('param-zscore').value);
+        const tp = parseFloat(document.getElementById('param-tp').value);
+        const sl = parseFloat(document.getElementById('param-sl').value);
+        const btn = document.querySelector('button[onclick="applyParameterOverride()"]');
+        try {
+          if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+          const res = await fetch('/api/parameter-override', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ obiThreshold: obi, zScoreThreshold: zscore, takeProfitPct: tp, stopLossPct: sl }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            if (btn) { btn.textContent = 'Saved!'; btn.style.background = 'rgba(0,255,135,0.15)'; btn.style.borderColor = 'rgba(0,255,135,0.4)'; btn.style.color = 'var(--green)'; }
+            updateParameterStatus('saved');
+            setTimeout(() => { if (btn) { btn.textContent = 'Apply Override'; btn.disabled = false; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; } }, 2000);
+          } else {
+            if (btn) { btn.textContent = 'Failed'; btn.style.background = 'rgba(255,59,92,0.15)'; btn.style.borderColor = 'rgba(255,59,92,0.4)'; btn.style.color = 'var(--red)'; }
+            setTimeout(() => { if (btn) { btn.textContent = 'Apply Override'; btn.disabled = false; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; } }, 2000);
+          }
+        } catch (e) {
+          if (btn) { btn.textContent = 'Error'; btn.style.background = 'rgba(255,59,92,0.15)'; btn.style.borderColor = 'rgba(255,59,92,0.4)'; btn.style.color = 'var(--red)'; }
+          setTimeout(() => { if (btn) { btn.textContent = 'Apply Override'; btn.disabled = false; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; } }, 2000);
+        }
+      }
+
+      async function resetParameters() {
+        try {
+          await fetch('/api/parameter-override', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reset: true }) });
+          document.getElementById('param-obi').value = 0.20;
+          document.getElementById('param-zscore').value = 0.80;
+          document.getElementById('param-tp').value = 0.015;
+          document.getElementById('param-sl').value = 0.005;
+          updateParameterStatus('default');
+        } catch {}
+      }
+
+      async function loadCurrentParameters() {
+        try {
+          const res = await fetch('/api/parameter-override?symbol=BTC');
+          if (!res.ok) return;
+          const data = await res.json();
+          if (data.params) {
+            document.getElementById('param-obi').value = data.params.obiThreshold ?? 0.20;
+            document.getElementById('param-zscore').value = data.params.zScoreThreshold ?? 0.80;
+            document.getElementById('param-tp').value = data.params.takeProfitPct ?? 0.015;
+            document.getElementById('param-sl').value = data.params.stopLossPct ?? 0.005;
+            const source = data.params.source || 'default';
+            updateParameterStatus(source);
+          }
+        } catch {}
+      }
+
+      function updateParameterStatus(source) {
+        let statusEl = document.getElementById('param-status');
+        if (!statusEl) {
+          statusEl = document.createElement('div');
+          statusEl.id = 'param-status';
+          statusEl.style.cssText = 'margin-top:8px;font-size:11px;font-weight:600;';
+          document.querySelector('.panel:nth-child(5) .badge').after(statusEl);
+        }
+        if (source === 'saved' || source === 'manual_override') {
+          statusEl.innerHTML = '<span style="color:var(--green)">● Manual Override Active</span>';
+        } else if (source === 'default') {
+          statusEl.innerHTML = '<span style="color:var(--text-3)">● Default Config</span>';
+        } else {
+          statusEl.innerHTML = '<span style="color:var(--gold)">● AI Optimized</span>';
+        }
+      }
 
     function renderCharts(analysis) {
       const hourly = analysis.hourlyBreakdown || [];
@@ -487,21 +709,22 @@
       if (!perf) return;
       cachedData = perf;
       const analysis = perf.analysis || {};
-      renderKPIs(analysis);
-      renderSymbolTable(analysis.symbolBreakdown);
-      renderExtremes(analysis.bestTrade, analysis.worstTrade);
-      renderHistory(perf.trades || []);
-      renderAI(analysis.aiInsights);
-      if (perf.trades && perf.trades.length > 0) renderEquity(perf.trades);
-      if (analysis.hourlyBreakdown && analysis.symbolBreakdown) renderCharts(analysis);
+       renderKPIs(analysis);
+       renderSymbolTable(analysis.symbolBreakdown);
+       renderExtremes(analysis.bestTrade, analysis.worstTrade);
+       renderHistory(perf.trades || []);
+       renderAI(analysis.aiInsights);
+       renderAutoTuning(analysis.autoTuning);
+       renderSessionAnalysis(analysis.sessionAnalysis);
+       if (perf.trades && perf.trades.length > 0) renderEquity(perf.trades);
+       if (analysis.hourlyBreakdown && analysis.symbolBreakdown) renderCharts(analysis);
     }
 
     function selectModel(modelId) {
       currentModel = modelId;
       document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-      const chips = document.querySelectorAll('.chip');
-      const idx = 0;
-      if (chips[idx]) chips[idx].classList.add('active');
+      const chip = document.querySelector(`.chip[data-model="${modelId}"]`);
+      if (chip) chip.classList.add('active');
       refresh();
     }
 
@@ -519,6 +742,7 @@
       }
     });
 
+    loadCurrentParameters();
     refresh();
   </script>
 </body>

@@ -10,6 +10,7 @@ export class ExchangeConnector implements IExchangeConnector {
   private onBookUpdateCallback: BookUpdateCallback | null = null;
   private isReconnecting = false;
   private connected = false;
+  private reconnectAttempts = 1;
 
   constructor() {}
 
@@ -28,6 +29,7 @@ export class ExchangeConnector implements IExchangeConnector {
     this.ws.on('open', () => {
       this.connected = true;
       this.isReconnecting = false;
+      this.reconnectAttempts = 1;
       for (const symbolConfig of Object.values(CONFIG.SYMBOLS)) {
         this.subscribeToCoin(symbolConfig.name);
       }
@@ -42,22 +44,27 @@ export class ExchangeConnector implements IExchangeConnector {
           const bids = bookData.levels[0];
           const asks = bookData.levels[1];
 
-          if (bids && bids.length > 0 && asks && asks.length > 0) {
-            const bestBidPrice = parseFloat(bids[0].px);
-            const bestBidQty = parseFloat(bids[0].sz);
-            const bestAskPrice = parseFloat(asks[0].px);
-            const bestAskQty = parseFloat(asks[0].sz);
+          if (!bids || !asks || bids.length === 0 || asks.length === 0) return;
 
-            const book: OrderBook = {
-              symbol,
-              bids: [[bestBidPrice, bestBidQty]],
-              asks: [[bestAskPrice, bestAskQty]],
-              updatedAt: bookData.time,
-            };
+          const bestBidPrice = parseFloat(bids[0].px);
+          const bestBidQty = parseFloat(bids[0].sz);
+          const bestAskPrice = parseFloat(asks[0].px);
+          const bestAskQty = parseFloat(asks[0].sz);
 
-            if (this.onBookUpdateCallback) {
-              this.onBookUpdateCallback(book);
-            }
+          if (isNaN(bestBidPrice) || isNaN(bestAskPrice) || isNaN(bestBidQty) || isNaN(bestAskQty)) return;
+          if (bestBidPrice <= 0 || bestAskPrice <= 0 || bestBidQty <= 0 || bestAskQty <= 0) return;
+          if (bestBidPrice >= bestAskPrice) return;
+          if (!isFinite(bestBidPrice) || !isFinite(bestAskPrice)) return;
+
+          const book: OrderBook = {
+            symbol,
+            bids: [[bestBidPrice, bestBidQty]],
+            asks: [[bestAskPrice, bestAskQty]],
+            updatedAt: bookData.time,
+          };
+
+          if (this.onBookUpdateCallback) {
+            this.onBookUpdateCallback(book);
           }
         }
       } catch (err) {
@@ -99,11 +106,15 @@ export class ExchangeConnector implements IExchangeConnector {
   private reconnect() {
     if (this.isReconnecting) return;
     this.isReconnecting = true;
-    console.log('[EXCHANGE] Reconnecting to Hyperliquid in 3 seconds...');
+    const delay = this.reconnectAttempts * 1000;
+    const maxDelay = 30000;
+    const actualDelay = Math.min(delay, maxDelay);
+    console.log(`[EXCHANGE] Reconnecting in ${actualDelay}ms (attempt ${this.reconnectAttempts})...`);
     setTimeout(() => {
       this.isReconnecting = false;
+      this.reconnectAttempts++;
       this.connect();
-    }, 3000);
+    }, actualDelay);
   }
 
   public async submitSimulatedOrder(

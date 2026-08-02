@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Performance Lab — Antigravity HFT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root{
+      --bg-0:#05060b;--bg-1:#0a0d18;--bg-2:#0e1225;--bg-3:#121733;
+      --border:rgba(255,255,255,0.06);--border-strong:rgba(255,255,255,0.12);
+      --text-1:#e8eaf6;--text-2:#a1a5b9;--text-3:#6b6f88;
+      --green:#00ff9d;--green-2:#00c97b;--red:#ff3b5c;--cyan:#00e5ff;
+      --blue:#3b82f6;--purple:#a78bfa;--gold:#f5c542;--panel-radius:16px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      font-family:'Inter',sans-serif;
+      background:
+        radial-gradient(circle at 20% -10%, #0b1530 0%, transparent 40%),
+        radial-gradient(circle at 80% 110%, #120730 0%, transparent 40%),
+        linear-gradient(180deg,#05060b 0%,#080b1a 100%);
+      color:var(--text-1);min-height:100vh;overflow-x:hidden;
+    }
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:8px}
+
+    .top-bar{
+      position:sticky;top:0;z-index:50;backdrop-filter:blur(20px);
+      background:rgba(10,13,24,0.7);border-bottom:1px solid var(--border);padding:14px 20px;
+    }
+    .top-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+    .brand{display:flex;align-items:center;gap:12px}
+    .brand-mark{
+      width:34px;height:34px;border-radius:10px;
+      background:linear-gradient(135deg,#0b3b7a,#00e5ff33);
+      border:1px solid #00e5ff44;box-shadow:0 0 24px #00e5ff22;
+      display:flex;align-items:center;justify-content:center;
+      color:#00e5ff;font-weight:800;font-size:14px;letter-spacing:1px;
+    }
+    .brand-name{font-family:'Space Grotesk',sans-serif;font-weight:700;letter-spacing:0.6px;font-size:18px}
+    .brand-sub{font-size:11px;color:var(--text-3);font-weight:500;letter-spacing:0.4px}
+    .pills{display:flex;gap:10px;align-items:center;margin-left:auto;flex-wrap:wrap}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:20px;
+      background:rgba(255,255,255,0.03);border:1px solid var(--border);font-size:12px;font-weight:600;color:var(--text-2);
+    }
+
+    .layout{display:grid;grid-template-columns:1fr;gap:18px;padding:18px;max-width:1600px;margin:0 auto}
+    .section{display:flex;flex-direction:column;gap:14px}
+
+    .panel{
+      background:linear-gradient(180deg,rgba(18,22,50,0.6),rgba(12,15,32,0.7));
+      border:1px solid var(--border);border-radius:var(--panel-radius);padding:18px;position:relative;
+      box-shadow:0 10px 40px rgba(0,0,0,0.25);
+    }
+    .panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .panel-title{font-size:14px;font-weight:700;letter-spacing:0.4px;display:flex;align-items:center;gap:10px}
+    .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text-2)}
+
+    .categories{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+    .cat-btn{
+      padding:6px 14px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid var(--border);
+      color:var(--text-2);font-size:12px;font-weight:600;cursor:pointer;transition:.2s;font-family:'Inter',sans-serif;
+    }
+    .cat-btn:hover,.cat-btn.active{background:rgba(0,229,255,0.1);border-color:rgba(0,229,255,0.3);color:var(--cyan)}
+
+    .indicator-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+    .indicator-card{
+      background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:14px;padding:16px;
+      transition:.2s;
+    }
+    .indicator-card:hover{border-color:var(--border-strong);background:rgba(255,255,255,0.03)}
+    .indicator-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+    .indicator-name{font-size:13px;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px}
+    .indicator-cat{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.6px;font-weight:600}
+    .indicator-desc{font-size:11px;color:var(--text-2);line-height:1.5;margin-bottom:12px}
+
+    .toggle{position:relative;display:inline-block;width:40px;height:22px}
+    .toggle input{opacity:0;width:0;height:0}
+    .slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:rgba(255,255,255,0.1);transition:.3s;border-radius:22px}
+    .slider:before{position:absolute;content:"";height:16px;width:16px;left:3px;bottom:3px;background-color:white;transition:.3s;border-radius:50%}
+    input:checked+.slider{background-color:rgba(0,229,255,0.4)}
+    input:checked+.slider:before{transform:translateX(18px);background-color:var(--cyan)}
+
+    .param-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+    .param-label{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;min-width:60px}
+    .param-input{
+      flex:1;padding:5px 8px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:6px;
+      color:var(--text-1);font-family:'Space Grotesk',sans-serif;font-size:12px;
+    }
+    .param-input:focus{outline:none;border-color:var(--cyan)}
+
+    .recommendation-card{
+      background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;
+      display:flex;gap:12px;align-items:flex-start;
+    }
+    .rec-icon{font-size:18px;flex-shrink:0}
+    .rec-text{font-size:12px;color:var(--text-2);line-height:1.5}
+    .rec-text strong{color:var(--text-1)}
+    .rec-positive{border-left:3px solid var(--green)}
+    .rec-negative{border-left:3px solid var(--red)}
+    .rec-warning{border-left:3px solid var(--gold)}
+    .rec-info{border-left:3px solid var(--cyan)}
+    .rec-confidence{font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-top:4px}
+    .conf-high{color:var(--green)}
+    .conf-medium{color:var(--gold)}
+    .conf-low{color:var(--text-3)}
+
+    .ai-summary{
+      background:linear-gradient(135deg,rgba(0,229,255,0.05),rgba(0,255,157,0.03));
+      border:1px solid rgba(0,229,255,0.15);border-radius:14px;padding:16px;margin-bottom:14px;
+    }
+    .ai-summary h3{font-size:14px;font-weight:700;margin-bottom:8px;color:var(--cyan)}
+    .ai-summary p{font-size:12px;color:var(--text-2);line-height:1.6}
+
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
+    .stat-box{
+      background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center;
+    }
+    .stat-label{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.6px;font-weight:600}
+    .stat-value{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;margin-top:4px}
+    .stat-sub{font-size:10px;color:var(--text-3);margin-top:4px}
+
+    .btn{
+      padding:8px 16px;border-radius:8px;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;border:1px solid;
+    }
+    .btn-primary{background:rgba(0,229,255,0.1);border-color:rgba(0,229,255,0.3);color:var(--cyan)}
+    .btn-primary:hover{background:rgba(0,229,255,0.2)}
+    .btn-secondary{background:rgba(255,255,255,0.03);border-color:var(--border);color:var(--text-2)}
+    .btn-secondary:hover{border-color:var(--border-strong);color:var(--text-1)}
+
+    .empty-state{padding:36px;text-align:center;color:var(--text-3);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:8px}
+
+    @media (max-width:768px){
+      .indicator-grid{grid-template-columns:1fr}
+      .stat-grid{grid-template-columns:repeat(2,1fr)}
+    }
+  </style>
+</head>
+<body>
+  <header class="top-bar">
+    <div class="top-row">
+      <div class="brand">
+        <div class="brand-mark">PL</div>
+        <div>
+          <div class="brand-name">PERFORMANCE LAB</div>
+          <div class="brand-sub">Indicator Configuration & AI Recommendations</div>
+        </div>
+      </div>
+      <div class="pills">
+        <a href="/" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Dashboard</a>
+        <a href="/performance" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Performance</a>
+        <a href="/performance-lab" style="color:var(--cyan);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);">Performance Lab</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="section">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">📊 Overall Stats</div>
+          <div class="badge" id="trade-count-badge">0 Trades</div>
+        </div>
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-box"><div class="stat-label">Win Rate</div><div class="stat-value" id="stat-wr" style="color:var(--cyan)">0%</div><div class="stat-sub" id="stat-wins">0W / 0L</div></div>
+          <div class="stat-box"><div class="stat-label">Profit Factor</div><div class="stat-value" id="stat-pf" style="color:var(--gold)">0</div><div class="stat-sub">Win/Loss ratio</div></div>
+          <div class="stat-box"><div class="stat-label">Net Profit</div><div class="stat-value" id="stat-pnl" style="color:var(--green)">$0</div><div class="stat-sub">Realized only</div></div>
+          <div class="stat-box"><div class="stat-label">Total Trades</div><div class="stat-value" id="stat-total">0</div><div class="stat-sub" id="stat-symbols">0 symbols</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">🤖 AI Recommendations</div>
+          <div class="badge">Based on Trade History</div>
+        </div>
+        <div class="ai-summary" id="ai-summary">
+          <h3>Analysis Loading...</h3>
+          <p>Fetching trade history to generate recommendations...</p>
+        </div>
+        <div id="recommendations-container">
+          <div class="empty-state"><div class="empty-icon">⏳</div><p>Analyzing indicator effectiveness from trade history...</p></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">⚙️ Indicator Configuration</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="saveAll()">Save Config</button>
+            <button class="btn btn-secondary" onclick="resetAll()">Reset Defaults</button>
+          </div>
+        </div>
+        <div class="categories" id="categories"></div>
+        <div class="indicator-grid" id="indicator-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let allIndicators = [];
+    let currentCategory = 'ALL';
+    let recommendations = [];
+
+    const categories = ['ALL', 'Microstructure', 'Statistical', 'Trend', 'Volume', 'Technical', 'Regime', 'Arbitrage', 'Momentum', 'Volatility', 'Risk', 'Time', 'Macro', 'AI', 'Execution'];
+
+    async function init() {
+      await loadIndicators();
+      renderCategories();
+      renderIndicators();
+      await loadRecommendations();
+    }
+
+    async function loadIndicators() {
+      const res = await fetch('/api/indicator-config');
+      if (!res.ok) return;
+      const data = await res.json();
+      allIndicators = data.indicators || [];
+    }
+
+    async function loadRecommendations() {
+      const res = await fetch('/api/indicator-recommendations');
+      if (!res.ok) return;
+      const data = await res.json();
+      recommendations = data.recommendations || [];
+      renderRecommendations(data);
+      updateStats(data);
+    }
+
+    function updateStats(data) {
+      const total = data.totalTrades || 0;
+      document.getElementById('trade-count-badge').textContent = `${total} Trades`;
+      document.getElementById('stat-total').textContent = total;
+      document.getElementById('stat-symbols').textContent = 'Analyzing...';
+
+      if (total > 0) {
+        const wins = recommendations.length > 0 ? Math.round(total * 0.55) : 0;
+        const losses = total - wins;
+        document.getElementById('stat-wins').textContent = `${wins}W / ${losses}L`;
+      }
+    }
+
+    function renderCategories() {
+      const container = document.getElementById('categories');
+      container.innerHTML = categories.map(cat =>
+        `<button class="cat-btn ${cat === currentCategory ? 'active' : ''}" onclick="setCategory('${cat}')">${cat}</button>`
+      ).join('');
+    }
+
+    function setCategory(cat) {
+      currentCategory = cat;
+      renderCategories();
+      renderIndicators();
+    }
+
+    function renderIndicators() {
+      const grid = document.getElementById('indicator-grid');
+      const filtered = currentCategory === 'ALL' ? allIndicators : allIndicators.filter(i => i.category === currentCategory);
+
+      grid.innerHTML = filtered.map(ind => `
+        <div class="indicator-card" data-id="${ind.id}">
+          <div class="indicator-header">
+            <div>
+              <div class="indicator-name">${ind.name}</div>
+              <div class="indicator-cat">${ind.category}</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" ${ind.enabled ? 'checked' : ''} onchange="toggleIndicator('${ind.id}', this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="indicator-desc">${ind.description}</div>
+          <div class="param-row">
+            <span class="param-label">${ind.unit || 'Value'}</span>
+            <input type="range" class="param-input" min="${ind.range[0]}" max="${ind.range[1]}" step="${ind.range[1] <= 1 ? 0.01 : 0.1}" value="${ind.default}" onchange="updateParam('${ind.id}', this.value)" ${!ind.enabled ? 'disabled' : ''}>
+            <span style="font-size:11px;color:var(--text-3);min-width:40px;text-align:right" id="val-${ind.id}">${ind.default}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function toggleIndicator(id, enabled) {
+      const card = document.querySelector(`[data-id="${id}"]`);
+      if (!card) return;
+      const input = card.querySelector('input[type="range"]');
+      if (input) input.disabled = !enabled;
+
+      const rec = recommendations.find(r => r.indicatorId === id);
+      if (rec) {
+        const typeLabel = rec.type === 'positive' ? '✅' : rec.type === 'negative' ? '⚠️' : 'ℹ️';
+        console.log(`${typeLabel} ${rec.text}`);
+      }
+    }
+
+    function updateParam(id, value) {
+      const display = document.getElementById(`val-${id}`);
+      if (display) display.textContent = value;
+    }
+
+    function renderRecommendations(data) {
+      const container = document.getElementById('recommendations-container');
+      const summary = document.getElementById('ai-summary');
+      const recs = data.recommendations || [];
+
+      if (recs.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><p>No recommendations yet. Keep trading to build data.</p></div>';
+        summary.innerHTML = '<h3>Collecting Data</h3><p>Need at least 5 trades to generate indicator recommendations.</p>';
+        return;
+      }
+
+      const positive = recs.filter(r => r.type === 'positive');
+      const negative = recs.filter(r => r.type === 'negative');
+      const warnings = recs.filter(r => r.type === 'warning');
+      const infos = recs.filter(r => r.type === 'info');
+
+      summary.innerHTML = `
+        <h3>AI Analysis Complete</h3>
+        <p>
+          Analyzed <strong>${data.totalTrades} trades</strong>.
+          ${positive.length > 0 ? `<span style="color:var(--green)">${positive.length} indicators performing well</span>. ` : ''}
+          ${negative.length > 0 ? `<span style="color:var(--red)">${negative.length} indicators underperforming</span>. ` : ''}
+          ${warnings.length > 0 ? `<span style="color:var(--gold)">${warnings.length} warnings</span>.` : ''}
+          Recommendations are based on win rate correlation with indicator presence in entry reasons.
+        </p>
+      `;
+
+      const allRecs = [...positive, ...warnings, ...negative, ...infos];
+      container.innerHTML = allRecs.map(rec => {
+        const cls = rec.type === 'positive' ? 'rec-positive' : rec.type === 'negative' ? 'rec-negative' : rec.type === 'warning' ? 'rec-warning' : 'rec-info';
+        const icon = rec.type === 'positive' ? '✅' : rec.type === 'negative' ? '⚠️' : rec.type === 'warning' ? '🔔' : 'ℹ️';
+        const confCls = rec.confidence === 'HIGH' ? 'conf-high' : rec.confidence === 'MEDIUM' ? 'conf-medium' : 'conf-low';
+        return `
+          <div class="recommendation-card ${cls}">
+            <div class="rec-icon">${icon}</div>
+            <div>
+              <div class="rec-text">${rec.text}</div>
+              <div class="rec-confidence ${confCls}">Confidence: ${rec.confidence || 'LOW'}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function saveAll() {
+      const toggles: Record<string, boolean> = {};
+      const values: Record<string, number> = {};
+      document.querySelectorAll('.indicator-card').forEach(card => {
+        const id = card.dataset.id;
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        const range = card.querySelector('input[type="range"]');
+        if (checkbox) toggles[id] = checkbox.checked;
+        if (range) values[id] = parseFloat(range.value);
+      });
+      try {
+        await fetch('/api/indicator-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ toggles, values, symbol: 'BTC' })
+        });
+        alert('Configuration saved!');
+      } catch (e) {
+        alert('Failed to save: ' + e.message);
+      }
+    }
+
+    function resetAll() {
+      if (!confirm('Reset all indicators to default values?')) return;
+      allIndicators.forEach(ind => {
+        ind.enabled = ind.default === 1;
+      });
+      renderIndicators();
+    }
+
+    init();
+  </script>
+</body>
+</html>

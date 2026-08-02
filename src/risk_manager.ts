@@ -46,6 +46,11 @@ export class RiskManager {
   // Performance tracking per symbol
   private symbolStats: Map<string, { wins: number; losses: number; totalPnl: number; trades: number }> = new Map();
   
+  // ATR tracking per symbol for volatility-based sizing
+  private symbolATR: Map<string, number> = new Map();
+  private symbolATRHistory: Map<string, number[]> = new Map();
+  private readonly atrPeriod = 14;
+  
   // Equity curve & metrics
   private equityCurve: number[] = [];
   private allTradeRecords: TradeRecord[] = [];
@@ -448,6 +453,24 @@ export class RiskManager {
 
   public getDailyDrawdownPct(): number {
     return (this.dailyPeakBalance - this.currentBalance) / this.dailyPeakBalance;
+  }
+
+  public updateATR(symbol: string, atr: number) {
+    if (atr <= 0 || isNaN(atr) || !isFinite(atr)) return;
+    this.symbolATR.set(symbol, atr);
+    const history = this.symbolATRHistory.get(symbol) || [];
+    history.push(atr);
+    if (history.length > this.atrPeriod * 2) history.shift();
+    this.symbolATRHistory.set(symbol, history);
+  }
+
+  public getATR(symbol: string): number {
+    const atr = this.symbolATR.get(symbol);
+    if (atr && atr > 0) return atr;
+    const coinConfig = Object.values(CONFIG.SYMBOLS).find(s => s.name === symbol);
+    if (!coinConfig) return 0;
+    const defaultATR = coinConfig.tickSize * CONFIG.ROLLING_WINDOW_SIZE * 0.5;
+    return Math.max(defaultATR, coinConfig.tickSize);
   }
 
   public getMaxConsecutiveLosses(): number {

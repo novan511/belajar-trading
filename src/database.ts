@@ -15,6 +15,27 @@ import { TradeRecord, Position, Side, ExecutionStats } from './types.js';
 import { CONFIG } from './config.js';
 import Database from 'better-sqlite3';
 
+let lastSupabaseRequest = 0;
+const SUPABASE_RATE_LIMIT_MS = 200;
+
+async function rateLimitedFetch(url: string, init: RequestInit): Promise<Response | null> {
+  const now = Date.now();
+  const elapsed = now - lastSupabaseRequest;
+  if (elapsed < SUPABASE_RATE_LIMIT_MS) {
+    await new Promise(resolve => setTimeout(resolve, SUPABASE_RATE_LIMIT_MS - elapsed));
+  }
+  lastSupabaseRequest = Date.now();
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch {
+    return null;
+  }
+}
+
 function supabaseFetch(table: string, method: string, body: any) {
   if (!CONFIG.SUPABASE_ENABLED) return Promise.resolve();
   const url = `${CONFIG.SUPABASE_URL}${table}`;
@@ -26,11 +47,42 @@ function supabaseFetch(table: string, method: string, body: any) {
   if (CONFIG.SUPABASE_SERVICE_ROLE_KEY) {
     headers['Authorization'] = `Bearer ${CONFIG.SUPABASE_SERVICE_ROLE_KEY}`;
   }
-  return fetch(url, {
+  return rateLimitedFetch(url, {
     method,
     headers,
     body: JSON.stringify(body),
+  }).then(response => {
+    if (!response) return;
+    return response.text();
   }).catch(() => {});
+}
+
+async function supabaseFetchGet(table: string, queryParams: string): Promise<any[]> {
+  if (!CONFIG.SUPABASE_ENABLED) return [];
+  const url = `${CONFIG.SUPABASE_URL}${table}?${queryParams}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'apikey': CONFIG.SUPABASE_SERVICE_ROLE_KEY || CONFIG.SUPABASE_ANON_KEY,
+  };
+  if (CONFIG.SUPABASE_SERVICE_ROLE_KEY) {
+    headers['Authorization'] = `Bearer ${CONFIG.SUPABASE_SERVICE_ROLE_KEY}`;
+  }
+  try {
+    const timeoutMs = 3000;
+    const fetchPromise = rateLimitedFetch(url, { method: 'GET', headers });
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error('Supabase fetch timeout')), timeoutMs);
+    });
+    const response = await Promise.race([fetchPromise, timeoutPromise]);
+    if (!response) return [];
+    try {
+      return (await response.json()) as any[];
+    } catch {
+      return [];
+    }
+  } catch {
+    return [];
+  }
 }
 
 export class TradeDatabase {
@@ -114,11 +166,56 @@ export class TradeDatabase {
         UNIQUE(model_id, date)
       );
 
-      CREATE INDEX IF NOT EXISTS idx_trades_model ON trades(model_id);
-      CREATE INDEX IF NOT EXISTS idx_trades_time ON trades(entry_time);
-      CREATE INDEX IF NOT EXISTS idx_positions_model ON active_positions(model_id);
-      CREATE INDEX IF NOT EXISTS idx_positions_status ON active_positions(status);
-    `);
+       CREATE INDEX IF NOT EXISTS idx_trades_model ON trades(model_id);
+       CREATE INDEX IF NOT EXISTS idx_trades_time ON trades(entry_time);
+       CREATE INDEX IF NOT EXISTS idx_positions_model ON active_positions(model_id);
+       CREATE INDEX IF NOT EXISTS idx_positions_status ON active_positions(status);
+
+       CREATE TABLE IF NOT EXISTS ai_feedback (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         model_id TEXT NOT NULL,
+         insight_type TEXT NOT NULL,
+         insight_data TEXT NOT NULL,
+         feedback TEXT NOT NULL,
+         rating INTEGER NOT NULL,
+         created_at INTEGER DEFAULT (strftime('%s','now'))
+       );
+
+       CREATE TABLE IF NOT EXISTS parameter_history (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         model_id TEXT NOT NULL,
+         symbol TEXT NOT NULL,
+         obi_threshold REAL,
+         z_score_threshold REAL,
+         take_profit_pct REAL,
+         stop_loss_pct REAL,
+         win_rate REAL,
+         profit_factor REAL,
+         net_profit_usd REAL,
+         trade_count INTEGER,
+         source TEXT DEFAULT 'manual',
+         created_at INTEGER DEFAULT (strftime('%s','now'))
+       );
+
+       CREATE TABLE IF NOT EXISTS session_performance (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         model_id TEXT NOT NULL,
+         session TEXT NOT NULL,
+         trades INTEGER DEFAULT 0,
+         wins INTEGER DEFAULT 0,
+         losses INTEGER DEFAULT 0,
+         net_profit_usd REAL DEFAULT 0,
+         win_rate REAL DEFAULT 0,
+         created_at INTEGER DEFAULT (strftime('%s','now'))
+       );
+     `);
+
+     // Create indexes for new tables
+     this.db.exec(`
+       CREATE INDEX IF NOT EXISTS idx_feedback_model ON ai_feedback(model_id);
+       CREATE INDEX IF NOT EXISTS idx_param_history_model ON parameter_history(model_id);
+       CREATE INDEX IF NOT EXISTS idx_session_perf_model ON session_performance(model_id);
+     `);
   }
 
   // ============================================================
@@ -277,19 +374,11 @@ export class TradeDatabase {
       WHERE id = ?
     `).run(positionId);
 
-    fetch(
-      `${CONFIG.SUPABASE_URL}positions?id=eq.${encodeURIComponent(positionId)}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': CONFIG.SUPABASE_SERVICE_ROLE_KEY || CONFIG.SUPABASE_ANON_KEY,
-          'Prefer': 'return=minimal',
-          ...(CONFIG.SUPABASE_SERVICE_ROLE_KEY ? { 'Authorization': `Bearer ${CONFIG.SUPABASE_SERVICE_ROLE_KEY}` } : {}),
-        },
-        body: JSON.stringify({ status: 'CLOSED', updated_at: Math.floor(Date.now() / 1000) }),
-      }
-    ).catch(() => {});
+    supabaseFetch('positions', 'PATCH', {
+      id: positionId,
+      status: 'CLOSED',
+      updated_at: Math.floor(Date.now() / 1000),
+    });
   }
 
   getAllActivePositions(): Position[] {
@@ -299,6 +388,228 @@ export class TradeDatabase {
     `).all(this.modelId);
 
     return rows.map((row: any) => this.mapPositionRow(row));
+  }
+
+  // ============================================================
+  // AI FEEDBACK
+  // ============================================================
+
+  saveFeedback(insightType: string, insightData: any, feedback: string, rating: number) {
+    const stmt = this.db.prepare(`
+      INSERT INTO ai_feedback (model_id, insight_type, insight_data, feedback, rating)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(this.modelId, insightType, JSON.stringify(insightData), feedback, rating);
+  }
+
+  getFeedback(limit: number = 50): any[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM ai_feedback 
+      WHERE model_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT ?
+    `).all(this.modelId, limit);
+    return rows.map((row: any) => ({
+      id: row.id,
+      insightType: row.insight_type,
+      insightData: JSON.parse(row.insight_data),
+      feedback: row.feedback,
+      rating: row.rating,
+      createdAt: row.created_at,
+    }));
+  }
+
+  // ============================================================
+  // PARAMETER HISTORY (for continuous learning)
+  // ============================================================
+
+  saveParameterSnapshot(symbol: string, params: any, performance: any, source: string = 'manual') {
+    const stmt = this.db.prepare(`
+      INSERT INTO parameter_history 
+        (model_id, symbol, obi_threshold, z_score_threshold, take_profit_pct, stop_loss_pct,
+         win_rate, profit_factor, net_profit_usd, trade_count, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      this.modelId, symbol,
+      params.obiThreshold ?? null,
+      params.zScoreThreshold ?? null,
+      params.takeProfitPct ?? null,
+      params.stopLossPct ?? null,
+      performance.winRate ?? null,
+      performance.profitFactor ?? null,
+      performance.netProfitUsd ?? null,
+      performance.tradeCount ?? null,
+      source
+    );
+  }
+
+  getParameterHistory(symbol?: string, limit: number = 100): any[] {
+    let query = `SELECT * FROM parameter_history WHERE model_id = ?`;
+    const params: any[] = [this.modelId];
+    if (symbol) {
+      query += ` AND symbol = ?`;
+      params.push(symbol);
+    }
+    query += ` ORDER BY created_at DESC LIMIT ?`;
+    params.push(limit);
+    const rows = this.db.prepare(query).all(...params);
+    return rows.map((row: any) => ({
+      id: row.id,
+      symbol: row.symbol,
+      obiThreshold: row.obi_threshold,
+      zScoreThreshold: row.z_score_threshold,
+      takeProfitPct: row.take_profit_pct,
+      stopLossPct: row.stop_loss_pct,
+      winRate: row.win_rate,
+      profitFactor: row.profit_factor,
+      netProfitUsd: row.net_profit_usd,
+      tradeCount: row.trade_count,
+      source: row.source,
+      createdAt: row.created_at,
+    }));
+  }
+
+  getBestParameters(symbol: string): any {
+    const row = this.db.prepare(`
+      SELECT obi_threshold, z_score_threshold, take_profit_pct, stop_loss_pct
+      FROM parameter_history 
+      WHERE model_id = ? AND symbol = ? AND win_rate > 0
+      ORDER BY (win_rate * profit_factor) DESC
+      LIMIT 1
+    `).get(this.modelId, symbol);
+    return row ? {
+      obiThreshold: row.obi_threshold,
+      zScoreThreshold: row.z_score_threshold,
+      takeProfitPct: row.take_profit_pct,
+      stopLossPct: row.stop_loss_pct,
+    } : null;
+  }
+
+  saveManualParameterOverride(symbol: string, params: { obiThreshold: number; zScoreThreshold: number; takeProfitPct: number; stopLossPct: number }) {
+    const stmt = this.db.prepare(`
+      INSERT INTO parameter_history 
+        (model_id, symbol, obi_threshold, z_score_threshold, take_profit_pct, stop_loss_pct, source)
+      VALUES (?, ?, ?, ?, ?, ?, 'manual_override')
+    `);
+    stmt.run(
+      this.modelId,
+      symbol,
+      params.obiThreshold,
+      params.zScoreThreshold,
+      params.takeProfitPct,
+      params.stopLossPct
+    );
+  }
+
+  getLatestParameterSnapshot(symbol?: string): any {
+    const query = symbol
+      ? `SELECT * FROM parameter_history WHERE model_id = ? AND symbol = ? ORDER BY created_at DESC LIMIT 1`
+      : `SELECT * FROM parameter_history WHERE model_id = ? ORDER BY created_at DESC LIMIT 1`;
+    const row = this.db.prepare(query).all(this.modelId, ...(symbol ? [symbol] : []));
+    if (!row || row.length === 0) return null;
+    const r = row[0];
+    return {
+      symbol: r.symbol,
+      obiThreshold: r.obi_threshold,
+      zScoreThreshold: r.z_score_threshold,
+      takeProfitPct: r.take_profit_pct,
+      stopLossPct: r.stop_loss_pct,
+      source: r.source,
+      createdAt: r.created_at,
+    };
+  }
+
+  // ============================================================
+  // SESSION PERFORMANCE (for session-based learning)
+  // ============================================================
+
+  saveSessionPerformance(session: string, trades: number, wins: number, losses: number, netProfitUsd: number) {
+    const winRate = trades > 0 ? (wins / trades) * 100 : 0;
+    const stmt = this.db.prepare(`
+      INSERT INTO session_performance (model_id, session, trades, wins, losses, net_profit_usd, win_rate)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(this.modelId, session, trades, wins, losses, netProfitUsd, winRate);
+  }
+
+  getSessionPerformance(limit: number = 30): any[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM session_performance 
+      WHERE model_id = ? 
+      ORDER BY created_at DESC 
+      LIMIT ?
+    `).all(this.modelId, limit);
+    return rows.map((row: any) => ({
+      session: row.session,
+      trades: row.trades,
+      wins: row.wins,
+      losses: row.losses,
+      netProfitUsd: row.net_profit_usd,
+      winRate: row.win_rate,
+      createdAt: row.created_at,
+    }));
+  }
+
+  // ============================================================
+  // LOAD POSITIONS FROM SUPABASE
+  // ============================================================
+
+  async loadPositionsFromSupabase(): Promise<number> {
+    try {
+      const timeoutMs = 3000;
+      const fetchPromise = supabaseFetchGet(
+        'positions',
+        `model_id=eq.${encodeURIComponent(this.modelId)}&status=eq.OPEN`
+      );
+      const timeoutPromise = new Promise<null>((_, reject) => {
+        setTimeout(() => reject(new Error('Supabase fetch timeout')), timeoutMs);
+      });
+      const remotePositions = await Promise.race([fetchPromise, timeoutPromise]);
+      if (!remotePositions || remotePositions.length === 0) {
+        return 0;
+      }
+
+      const insertStmt = this.db.prepare(`
+        INSERT OR REPLACE INTO active_positions
+          (id, symbol, side, entry_price, quantity, entry_time,
+           take_profit_price, stop_loss_price, highest_price, lowest_price,
+           entry_reason, is_tp_triggered, model_id, remaining_qty, partial_tps, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      const insertMany = this.db.transaction((positions: any[]) => {
+        for (const row of positions) {
+          insertStmt.run(
+            row.id,
+            row.symbol,
+            row.side,
+            row.entry_price,
+            row.quantity,
+            row.entry_time,
+            row.take_profit_price,
+            row.stop_loss_price,
+            row.highest_price || row.entry_price,
+            row.lowest_price || row.entry_price,
+            row.entry_reason || null,
+            row.is_tp_triggered ? 1 : 0,
+            row.model_id,
+            row.remaining_qty || row.quantity,
+            row.partial_tps ? JSON.stringify(row.partial_tps) : null,
+            row.status || 'OPEN'
+          );
+        }
+      });
+
+      insertMany(remotePositions);
+
+      console.log(
+        `\x1b[36m[DATABASE] Loaded ${remotePositions.length} positions from Supabase for ${this.modelId}\x1b[0m`
+      );
+      return remotePositions.length;
+    } catch {
+      return 0;
+    }
   }
 
   getActivePositionsBySymbol(symbol: string): Position[] {

@@ -42,6 +42,14 @@ export class WebDashboardServer {
                 this.handlePerformanceApi(req, res);
                 return;
             }
+            if (req.method === 'POST' && url.startsWith('/api/ai-feedback')) {
+                this.handleAIFeedback(req, res);
+                return;
+            }
+            if (req.method === 'POST' && url.startsWith('/api/parameter-override')) {
+                this.handleParameterOverride(req, res);
+                return;
+            }
             res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('Not Found');
         });
@@ -265,6 +273,60 @@ export class WebDashboardServer {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message }));
         }
+    }
+    async handleAIFeedback(req, res) {
+        try {
+            const body = await this.readBody(req);
+            const { type, rating } = JSON.parse(body);
+            if (type && (rating === 1 || rating === -1)) {
+                const data = this.performanceDataProvider ? this.performanceDataProvider() : null;
+                const modelId = data?.models ? Object.keys(data.models)[0] : 'Llama_8B';
+                const database = data?.models?.[modelId]?.database;
+                if (database) {
+                    database.saveFeedback(type, { rating, timestamp: Date.now() }, type === 'positive' ? 'User confirmed insight accuracy' : 'User flagged insight as inaccurate', rating);
+                }
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true }));
+        }
+        catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+    }
+    async handleParameterOverride(req, res) {
+        try {
+            const body = await this.readBody(req);
+            const params = JSON.parse(body);
+            if (params.reset) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, message: 'Parameters reset to defaults' }));
+                return;
+            }
+            const { obiThreshold, zScoreThreshold, takeProfitPct, stopLossPct } = params;
+            if (obiThreshold !== undefined)
+                CONFIG.SYMBOLS.BTC.obiThreshold = obiThreshold;
+            if (zScoreThreshold !== undefined)
+                CONFIG.SYMBOLS.BTC.zScoreThreshold = zScoreThreshold;
+            if (takeProfitPct !== undefined)
+                CONFIG.SYMBOLS.BTC.takeProfitPct = takeProfitPct;
+            if (stopLossPct !== undefined)
+                CONFIG.SYMBOLS.BTC.stopLossPct = stopLossPct;
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, message: 'Parameters updated' }));
+        }
+        catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+    }
+    readBody(req) {
+        return new Promise((resolve, reject) => {
+            let data = '';
+            req.on('data', chunk => { data += chunk; });
+            req.on('end', () => resolve(data));
+            req.on('error', reject);
+        });
     }
     close() {
         this.wss.close();

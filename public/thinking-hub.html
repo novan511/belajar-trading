@@ -314,7 +314,7 @@
       <div style="width:10px;height:10px;border-radius:50%;background:var(--neon-cyan);box-shadow:0 0 16px var(--neon-cyan);animation:pulseGlow 2s infinite alternate;"></div>
       <div>
         <h1 style="font-size:16px;margin:0;font-weight:700;letter-spacing:0.5px;background:linear-gradient(135deg,#fff,#a5a9c2);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">THINKING HUB</h1>
-        <p style="font-size:11px;color:var(--text-muted);margin:0;">AI Detail Analysis Per Coin</p>
+        <p style="font-size:11px;color:var(--text-muted);margin:0;">AI Analysis — Crypto / Commodity / US Stock</p>
       </div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
@@ -322,10 +322,19 @@
       <a href="/performance" style="color:var(--text-main);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">Performance Lab</a>
       <a href="/thinking-hub" style="color:var(--neon-cyan);text-decoration:none;font-weight:600;font-size:13px;padding:6px 12px;border-radius:10px;background:rgba(0,242,254,0.08);border:1px solid rgba(0,242,254,0.15);">Thinking Hub</a>
     </div>
-    <div>
+    <div style="display:flex;gap:10px;align-items:center;">
       <span class="symbol-badge-large" id="detail-symbol">--</span>
+      <span id="market-type-badge" style="font-size:12px;font-weight:700;padding:4px 12px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:var(--text-2);">--</span>
     </div>
   </nav>
+
+  <!-- MARKET SCREENING OVERVIEW -->
+  <div style="background:rgba(12,14,28,0.6);border:1px solid rgba(255,255,255,0.05);border-radius:16px;padding:16px;margin-bottom:20px;backdrop-filter:blur(10px);">
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:12px;">🤖 AI Market Screening — Multi-Asset Overview</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;" id="market-overview">
+      <!-- Filled by JS -->
+    </div>
+  </div>
 
   <div class="grid">
     <div style="display:flex;flex-direction:column;gap:16px;">
@@ -1086,8 +1095,72 @@
     }
 
     // ============================================================
+    // Market Type Classification & Overview
+    // ============================================================
+    const MARKET_TYPES = {
+      crypto: { label: 'Crypto', color: 'var(--neon-cyan)', assets: ['BTC','ETH','SOL','SUI','XRP','HYPE','DOGE','NEAR','FET'] },
+      commodity: { label: 'Commodity (Oil)', color: 'var(--neon-gold)', assets: ['WTIOIL'] },
+      stock: { label: 'US Stock', color: 'var(--neon-purple)', assets: ['AAPL','AMAT','NVDA','TSLA','GOOGL','MSFT','META','AMZN','NFLX','COIN'] }
+    };
+
+    function getMarketType(sym) {
+      for (const [type, data] of Object.entries(MARKET_TYPES)) {
+        if (data.assets.includes(sym.toUpperCase())) return type;
+      }
+      return 'crypto';
+    }
+
+    function updateMarketTypeBadge(sym) {
+      const type = getMarketType(sym);
+      const badge = document.getElementById('market-type-badge');
+      if (!badge) return;
+      const cfg = MARKET_TYPES[type];
+      badge.textContent = cfg.label;
+      badge.style.color = cfg.color;
+      badge.style.borderColor = cfg.color + '44';
+      badge.style.background = cfg.color + '15';
+    }
+
+    function renderMarketOverview(models) {
+      const container = document.getElementById('market-overview');
+      if (!container) return;
+       const rows = [];
+      for (const [type, cfg] of Object.entries(MARKET_TYPES)) {
+        const cards = cfg.assets.map(asset => {
+          const modelData = models?.['Llama_8B'];
+          const insight = modelData?.aiInsights?.[asset];
+          const bias = insight?.bias || 'NEUTRAL';
+          const conf = insight?.confidence || 0;
+          const biasColor = bias === 'BULLISH' ? 'var(--neon-green)' : bias === 'BEARISH' ? 'var(--neon-red)' : 'var(--neon-gold)';
+          const isActive = asset === symbol;
+          return `
+            <div style="padding:10px;background:${isActive ? 'rgba(0,242,254,0.08)' : 'rgba(255,255,255,0.02)'};border:1px solid ${isActive ? 'rgba(0,242,254,0.3)' : 'rgba(255,255,255,0.05)'};border-radius:10px;cursor:pointer;transition:.2s;${isActive ? 'box-shadow:0 0 16px rgba(0,242,254,0.15);' : ''}" onclick="location.href='/thinking-hub?symbol=${asset}'">
+              <div style="font-size:11px;font-weight:700;color:var(--text-1);margin-bottom:4px;">${asset}</div>
+              <div style="font-size:10px;color:${biasColor};font-weight:600;">${bias} ${conf > 0 ? conf + '%' : ''}</div>
+            </div>
+          `;
+        }).join('');
+        rows.push(`<div style="display:flex;flex-direction:column;gap:8px;"><div style="font-size:10px;font-weight:700;color:${cfg.color};text-transform:uppercase;letter-spacing:0.6px;">${cfg.label}</div><div style="display:flex;flex-direction:column;gap:6px;">${cards}</div></div>`);
+      }
+      container.innerHTML = rows.join('');
+    }
+
+    // Override handleWsMessage to also render market overview
+    const originalHandleWsMessage = handleWsMessage;
+    handleWsMessage = function(event) {
+      originalHandleWsMessage(event);
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'dashboard_update') {
+          renderMarketOverview(payload.data?.models || {});
+        }
+      } catch(e) {}
+    };
+
+    // ============================================================
     // Init
     // ============================================================
+    updateMarketTypeBadge(symbol);
     document.getElementById('trade-history-symbol-loading').textContent = symbol;
     fetchCandles('5m');
     connectWsWithTradeHistory();

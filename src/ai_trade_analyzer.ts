@@ -25,6 +25,20 @@ export interface TradeAnalysis {
     recommendations: string[];
     patternNotes: string[];
   };
+  autoTuning: {
+    recommendedObiThreshold: number | null;
+    recommendedZScoreThreshold: number | null;
+    recommendedTakeProfitPct: number | null;
+    recommendedStopLossPct: number | null;
+    reason: string;
+    confidence: 'HIGH' | 'LOW' | null;
+  };
+  sessionAnalysis: {
+    bestSession: string | null;
+    worstSession: string | null;
+    shouldPauseSession: string | null;
+    recommendation: string;
+  } | null;
 }
 
 export class AITradeAnalyzer {
@@ -87,6 +101,9 @@ export class AITradeAnalyzer {
     const overallWinRate = (wins.length / trades.length) * 100;
     const aiInsights = this.generateInsights(trades, symbolBreakdown, sideBreakdown, hourlyBreakdown, profitFactor, overallWinRate);
 
+    const autoTuning = this.computeAutoTuning(trades, symbolBreakdown, profitFactor, overallWinRate);
+    const sessionAnalysis = this.computeSessionAnalysis(trades);
+
     return {
       totalTrades: trades.length,
       winRate: overallWinRate,
@@ -105,6 +122,8 @@ export class AITradeAnalyzer {
       maxDrawdown: riskMetrics ? riskMetrics.maxDrawdown : 0,
       riskMetrics,
       aiInsights,
+      autoTuning,
+      sessionAnalysis,
     };
   }
 
@@ -114,6 +133,15 @@ export class AITradeAnalyzer {
       bestTrade: null, worstTrade: null, symbolBreakdown: [], sideBreakdown: [], hourlyBreakdown: [], dailyBreakdown: [],
       consecutiveLosses: 0, maxDrawdown: 0, riskMetrics: null,
       aiInsights: { summary: 'Belum ada data trade.', strengths: [], weaknesses: [], recommendations: [], patternNotes: [] },
+      autoTuning: {
+        recommendedObiThreshold: null,
+        recommendedZScoreThreshold: null,
+        recommendedTakeProfitPct: null,
+        recommendedStopLossPct: null,
+        reason: 'Belum cukup data untuk auto-tuning.',
+        confidence: null,
+      },
+      sessionAnalysis: null,
     };
   }
 
@@ -181,5 +209,149 @@ export class AITradeAnalyzer {
     const summary = summaries.length > 0 ? summaries[0] : `Total ${total} trade dengan win rate ${winRate.toFixed(1)}% dan profit factor ${profitFactor.toFixed(2)}.`;
 
     return { summary, strengths, weaknesses, recommendations, patternNotes };
+  }
+
+  /**
+   * B. Auto-Parameter Tuning: analyze performance trends and recommend parameter adjustments
+   */
+  private computeAutoTuning(
+    trades: TradeRecord[],
+    symbolBreakdown: PerformanceAttribution[],
+    profitFactor: number,
+    winRate: number
+  ): TradeAnalysis['autoTuning'] {
+    const total = trades.length;
+    if (total < 10) {
+      return {
+        recommendedObiThreshold: null,
+        recommendedZScoreThreshold: null,
+        recommendedTakeProfitPct: null,
+        recommendedStopLossPct: null,
+        reason: 'Belum cukup data (min 10 trade). Tunggu evaluasi berikutnya.',
+        confidence: null,
+      };
+    }
+
+    const recentTrades = trades.slice(-30);
+    const recentWins = recentTrades.filter(t => t.result === 'WIN');
+    const recentLosses = recentTrades.filter(t => t.result === 'LOSS');
+    const recentWinRate = recentWins.length / recentTrades.length;
+
+    const recommendations: string[] = [];
+    let obiThreshold: number | null = null;
+    let zScoreThreshold: number | null = null;
+    let takeProfitPct: number | null = null;
+    let stopLossPct: number | null = null;
+
+    // Win rate declining → tighten entry thresholds
+    if (recentWinRate < 0.45 && total >= 20) {
+      const olderHalf = trades.slice(0, Math.floor(total / 2));
+      const olderWins = olderHalf.filter(t => t.result === 'WIN').length;
+      const olderWinRate = olderWins / olderHalf.length;
+
+      if (recentWinRate < olderWinRate - 0.1) {
+        obiThreshold = CONFIG.SYMBOLS.BTC.obiThreshold * 1.15;
+        zScoreThreshold = CONFIG.SYMBOLS.BTC.zScoreThreshold * 1.1;
+        recommendations.push(`Win rate menurun (terkini ${(recentWinRate * 100).toFixed(0)}% vs historis ${(olderWinRate * 100).toFixed(0)}%) → tighten OBV threshold +15% dan Z-score +10%`);
+      }
+    }
+
+    // Profit factor < 1 → widen stops, reduce TP
+    if (profitFactor < 1.0 && total >= 15) {
+      stopLossPct = CONFIG.SYMBOLS.BTC.stopLossPct * 0.8;
+      takeProfitPct = CONFIG.SYMBOLS.BTC.takeProfitPct * 0.9;
+      recommendations.push(`Profit factor ${profitFactor.toFixed(2)} < 1 → relaksasi SL ke ${(stopLossPct! * 100).toFixed(2)}% dan TP ke ${(takeProfitPct! * 100).toFixed(2)}%`);
+    }
+
+    // High win rate but low profit factor → widen TP
+    if (winRate >= 60 && profitFactor < 1.3 && total >= 20) {
+      takeProfitPct = CONFIG.SYMBOLS.BTC.takeProfitPct * 1.2;
+      recommendations.push(`Win rate tinggi (${(winRate * 100).toFixed(0)}%) tapi profit factor rendah (${profitFactor.toFixed(2)}) → perbesar TP ke ${(takeProfitPct! * 100).toFixed(2)}%`);
+    }
+
+    // Consecutive losses → pause and widen
+    const maxConsecLoss = this.calculateMaxConsecutiveLosses(trades);
+    if (maxConsecLoss >= 4) {
+      stopLossPct = CONFIG.SYMBOLS.BTC.stopLossPct * 1.2;
+      recommendations.push(`${maxConsecLoss} consecutive losses → perlebar SL ke ${(stopLossPct! * 100).toFixed(2)}% dan kurangi ukuran posisi`);
+    }
+
+    const confidence = recommendations.length > 0 ? (recommendations.length >= 2 ? 'HIGH' : 'LOW') : null;
+    const reason = recommendations.length > 0 ? recommendations.join('; ') : 'Tidak ada penyesuaian parameter yang direkomendasikan saat ini.';
+
+    return {
+      recommendedObiThreshold: obiThreshold,
+      recommendedZScoreThreshold: zScoreThreshold,
+      recommendedTakeProfitPct: takeProfitPct,
+      recommendedStopLossPct: stopLossPct,
+      reason,
+      confidence,
+    };
+  }
+
+  /**
+   * C. Session-Based Learning: analyze hourly performance and recommend session adjustments
+   */
+  private computeSessionAnalysis(trades: TradeRecord[]): TradeAnalysis['sessionAnalysis'] {
+    if (trades.length < 10) return null;
+
+    const byHour: Record<number, { trades: number; wins: number; netProfit: number }> = {};
+    for (const t of trades) {
+      const hour = new Date(t.entryTime).getUTCHours();
+      if (!byHour[hour]) byHour[hour] = { trades: 0, wins: 0, netProfit: 0 };
+      byHour[hour].trades++;
+      if (t.result === 'WIN') byHour[hour].wins++;
+      byHour[hour].netProfit += t.netProfitUsd;
+    }
+
+    const sessionEntries = Object.entries(byHour)
+      .filter(([_, data]) => data.trades >= 3)
+      .map(([hour, data]) => ({
+        hour: parseInt(hour),
+        winRate: data.wins / data.trades,
+        netProfit: data.netProfit,
+        trades: data.trades,
+      }))
+      .sort((a, b) => b.netProfit - a.netProfit);
+
+    if (sessionEntries.length === 0) return null;
+
+    const bestSession = sessionEntries[0];
+    const worstSession = sessionEntries[sessionEntries.length - 1];
+
+    let shouldPauseSession: string | null = null;
+    const recommendation: string[] = [];
+
+    if (worstSession.winRate < 0.3 && worstSession.trades >= 3) {
+      shouldPauseSession = `UTC ${String(worstSession.hour).padStart(2, '0')}:00`;
+      recommendation.push(`Sesi UTC ${shouldPauseSession} memiliki WR ${(worstSession.winRate * 100).toFixed(0)}% dan net PnL $${worstSession.netProfit.toFixed(2)} → auto-pause di jam ini`);
+    }
+
+    if (bestSession.winRate >= 0.6 && bestSession.trades >= 3) {
+      recommendation.push(`Sesi terbaik: UTC ${String(bestSession.hour).padStart(2, '0')}:00 (WR ${(bestSession.winRate * 100).toFixed(0)}%, net $${bestSession.netProfit.toFixed(2)}) → prioritas trading di jam ini`);
+    }
+
+    return {
+      bestSession: `UTC ${String(bestSession.hour).padStart(2, '0')}:00`,
+      worstSession: `UTC ${String(worstSession.hour).padStart(2, '0')}:00`,
+      shouldPauseSession,
+      recommendation: recommendation.join('; '),
+    };
+  }
+
+  /**
+   * D. Reinforcement Learning Ringan: process feedback and adjust future insights
+   */
+  processFeedback(feedback: string, rating: number, currentInsights: TradeAnalysis['aiInsights']): TradeAnalysis['aiInsights'] {
+    const adjusted = { ...currentInsights };
+
+    if (rating === 1) {
+      adjusted.strengths.push(`User feedback: insight terbukti akurat`);
+    } else if (rating === -1) {
+      adjusted.weaknesses.push(`User feedback: insight tidak akurat — perlu re-evaluation`);
+      adjusted.recommendations.push('Insight ini kurang akurat. Pertimbangkan untuk menyesuaikan parameter entry.');
+    }
+
+    return adjusted;
   }
 }
