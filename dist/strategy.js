@@ -328,8 +328,7 @@ export class StrategyManager {
         if (isInValueArea)
             longConfirmations++;
         if (isBuyAllowedByAI && isNearSupportLevel && hasLongImbalance && hasLongMicroPriceDivergence && isOversold && hasUpwardMomentum) {
-            // NEW: Require minimum confirmations
-            if (longConfirmations < 2)
+            if (longConfirmations < 1)
                 return null;
             if (this.macroTrends['BTC'] === 'BEARISH') {
                 return null;
@@ -379,7 +378,7 @@ export class StrategyManager {
         if (isInValueArea)
             shortConfirmations++;
         if (isSellAllowedByAI && isNearResistanceLevel && hasShortImbalance && hasShortMicroPriceDivergence && isOverbought && hasDownwardMomentum) {
-            if (longConfirmations < 2)
+            if (shortConfirmations < 1)
                 return null;
             if (this.macroTrends['BTC'] === 'BULLISH') {
                 return null;

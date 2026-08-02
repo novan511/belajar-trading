@@ -406,6 +406,32 @@ export class TradeDatabase {
             stopLossPct: row.stop_loss_pct,
         } : null;
     }
+    saveManualParameterOverride(symbol, params) {
+        const stmt = this.db.prepare(`
+      INSERT INTO parameter_history 
+        (model_id, symbol, obi_threshold, z_score_threshold, take_profit_pct, stop_loss_pct, source)
+      VALUES (?, ?, ?, ?, ?, ?, 'manual_override')
+    `);
+        stmt.run(this.modelId, symbol, params.obiThreshold, params.zScoreThreshold, params.takeProfitPct, params.stopLossPct);
+    }
+    getLatestParameterSnapshot(symbol) {
+        const query = symbol
+            ? `SELECT * FROM parameter_history WHERE model_id = ? AND symbol = ? ORDER BY created_at DESC LIMIT 1`
+            : `SELECT * FROM parameter_history WHERE model_id = ? ORDER BY created_at DESC LIMIT 1`;
+        const row = this.db.prepare(query).all(this.modelId, ...(symbol ? [symbol] : []));
+        if (!row || row.length === 0)
+            return null;
+        const r = row[0];
+        return {
+            symbol: r.symbol,
+            obiThreshold: r.obi_threshold,
+            zScoreThreshold: r.z_score_threshold,
+            takeProfitPct: r.take_profit_pct,
+            stopLossPct: r.stop_loss_pct,
+            source: r.source,
+            createdAt: r.created_at,
+        };
+    }
     // ============================================================
     // SESSION PERFORMANCE (for session-based learning)
     // ============================================================

@@ -132,11 +132,11 @@ export class WebDashboardServer {
               const details: Record<string, any> = {};
               for (const [modelId, modelData] of Object.entries(models)) {
                 const aiInsights = (modelData as any).aiInsights || {};
-                if (aiInsights[parsed.symbol]) {
-                  const insight = aiInsights[parsed.symbol];
-                  const activePos = ((modelData as any).activePositions || []).find((p: any) => p.symbol === parsed.symbol);
+                const activePos = ((modelData as any).activePositions || []).find((p: any) => p.symbol === parsed.symbol);
+                const insight = aiInsights[parsed.symbol];
+                if (insight || activePos) {
                   details[modelId] = {
-                    insight,
+                    insight: insight || null,
                     position: activePos || null,
                     stats: (modelData as any).stats || null
                   };

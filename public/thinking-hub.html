@@ -606,15 +606,15 @@
             if (payload.type === 'thinking_detail' && payload.symbol === symbol) {
               updateThinkingUI(payload.details);
             } else if (payload.type === 'dashboard_update') {
-              // Also check if we can extract insight from dashboard data
               const models = payload.data?.models || {};
               const details = {};
               for (const [modelId, modelData] of Object.entries(models)) {
                 const insights = modelData.aiInsights || {};
-                if (insights[symbol]) {
-                  const activePos = (modelData.activePositions || []).find(p => p.symbol === symbol);
+                const activePos = (modelData.activePositions || []).find(p => p.symbol === symbol);
+                const insight = insights[symbol];
+                if (insight || activePos) {
                   details[modelId] = {
-                    insight: insights[symbol],
+                    insight: insight || null,
                     position: activePos || null,
                     stats: modelData.stats || null
                   };
@@ -1051,10 +1051,11 @@
           const details = {};
           for (const [modelId, modelData] of Object.entries(models)) {
             const insights = modelData.aiInsights || {};
-            if (insights[symbol]) {
-              const activePos = (modelData.activePositions || []).find(p => p.symbol === symbol);
+            const activePos = (modelData.activePositions || []).find(p => p.symbol === symbol);
+            const insight = insights[symbol];
+            if (insight || activePos) {
               details[modelId] = {
-                insight: insights[symbol],
+                insight: insight || null,
                 position: activePos || null,
                 stats: modelData.stats || null
               };

@@ -48,6 +48,26 @@ MARKET DOMINANCE DATA INTEGRATION:
 - BTC Dominance (BTC.D): Represents BTC's share of the market. High/Rising BTC.D during market strength means capital is flowing into BTC (favor BTC trades over altcoins). Falling BTC.D during alt-season means alts are stronger (favor SOL, SUI, XRP, DOGE, HYPE).
 - USDT Dominance (USDT.D): Represents cash sideline levels. High/Rising USDT.D indicates market fear/panic selling (tighten Stop Losses, wait for deeper pullbacks). Falling USDT.D indicates high risk-on buying (loosen entry requirements, trade aggressively).
 
+MULTI-ASSET CLASS SCREENING MANDATE:
+You are analyzing THREE distinct asset classes. Apply appropriate screening logic for each:
+
+1. CRYPTOCURRENCY (BTC, ETH, SOL, SUI, XRP, HYPE, DOGE, NEAR, FET):
+   - High volatility, 24/7 market, crypto-specific drivers (on-chain activity, regulatory news, BTC dominance shifts)
+   - Prioritize: Liquidity sweeps, CVD divergences, OBI imbalances, VWAP conformations
+   - Risk: Higher volatility requires wider stops relative to crypto ATR
+
+2. COMMODITIES (WTIOIL - WTI Crude Oil):
+   - Correlated with macro economics, USD strength, OPEC decisions, geopolitical events
+   - Prioritize: Higher timeframe trends (4h/1h), S/R levels from daily structure, volume profile
+   - Risk: Oil tends to gap during weekends/events; use tighter risk management
+   - Bias drivers: USD index, inventory reports, geopolitical tensions
+
+3. US STOCKS (AAPL, AMAT, NVDA, TSLA, GOOGL, MSFT, META, AMZN, NFLX, COIN):
+   - Equities with earnings cycles, Fed policy sensitivity, sector rotation
+   - Prioritize: Daily/4h trend structure, VWAP as intraday tool, earnings calendar awareness
+   - Risk: Stock-specific news (earnings, guidance) can cause massive gaps
+   - Bias drivers: Earnings, Fed rates, sector momentum (tech leadership)
+
 MULTI-TIMEFRAME ANALYSIS MANDATE (TOP-DOWN ANALYSIS):
 Analyze the provided candle trends and premium indicators for each symbol across:
 - Macro Trend: 4-Hour (4h) and 1-Hour (1h). What is the primary swing structure?
@@ -61,13 +81,13 @@ You must synthesize these timeframes:
 STRICT RISK-TO-REWARD (R:R) MANDATE (1:2 to 1:4):
 1. Profit Protection & Edge: To ensure long-term profitability, you MUST enforce a Risk-to-Reward ratio between 1:2 and 1:4 for every single symbol.
 2. Stop Loss limits: stopLossPct MUST be strictly between 0.25x and 0.50x of takeProfitPct.
-   - For example: if takeProfitPct is 0.0200 (2.0%), stopLossPct MUST be between 0.0050 (0.50%) and 0.0100 (1.00%).
-   - NEVER let stopLossPct exceed 0.50x of takeProfitPct!
+    - For example: if takeProfitPct is 0.0200 (2.0%), stopLossPct MUST be between 0.0050 (0.50%) and 0.0100 (1.00%).
+    - NEVER let stopLossPct exceed 0.50x of takeProfitPct!
 3. Parameter bounds:
-   - obiThreshold: [0.12 to 0.40] - Tick volume imbalance sensitivity.
-   - zScoreThreshold: [0.6 to 1.8] - Mean-reversion tick trigger depth.
-   - takeProfitPct: [0.0100 to 0.0500] (1.0% to 5.0%) - Swing target.
-   - stopLossPct: [0.0030 to 0.0200] (0.3% to 2.0%) - Swing stop loss. MUST be 0.25x to 0.50x of takeProfitPct.
+    - obiThreshold: [0.12 to 0.40] - Tick volume imbalance sensitivity.
+    - zScoreThreshold: [0.6 to 1.8] - Mean-reversion tick trigger depth.
+    - takeProfitPct: [0.0100 to 0.0500] (1.0% to 5.0%) - Swing target.
+    - stopLossPct: [0.0030 to 0.0200] (0.3% to 2.0%) - Swing stop loss. MUST be 0.25x to 0.50x of takeProfitPct.
 
 OUTPUT FORMAT:
 Return ONLY a valid, raw JSON object matching the exact schema below. Do not output markdown code fences, do not write explanations outside JSON, do not add text before or after the JSON.

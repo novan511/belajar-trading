@@ -103,6 +103,21 @@ async function main() {
         if (savedPositions.length > 0) {
             logDebug(`[DATABASE] Restored ${savedPositions.length} active positions for ${modelId} from SQLite`);
         }
+        // Load latest parameter snapshot from database
+        const savedParams = database.getLatestParameterSnapshot('BTC');
+        if (savedParams) {
+            try {
+                const strategy = models[modelId].strategy;
+                strategy.updateParams('BTC', {
+                    obiThreshold: savedParams.obiThreshold,
+                    zScoreThreshold: savedParams.zScoreThreshold,
+                    takeProfitPct: savedParams.takeProfitPct,
+                    stopLossPct: savedParams.stopLossPct,
+                });
+                logDebug(`[PARAMS] Restored manual override for ${modelId}: OBI=${savedParams.obiThreshold}, Z=${savedParams.zScoreThreshold}, TP=${savedParams.takeProfitPct}, SL=${savedParams.stopLossPct}`);
+            }
+            catch { }
+        }
     }
     // 2. Start the Premium Real-time HTML Dashboard server — pass exchange for backtesting
     const dashboardServer = new WebDashboardServer(10001, exchange);
@@ -394,6 +409,8 @@ async function main() {
         logDebug(`Connection error on startup: ${err.message}`);
         process.exit(1);
     }
+    // Initial dashboard broadcast so browser UI has data immediately on load
+    sendDashboardUpdate();
     // 5. Set up periodic dashboard redrawing and Safeguard Position Evaluator (once per second)
     const dashboardInterval = setInterval(() => {
         // Proactive Safeguard Evaluator for each model
@@ -406,6 +423,8 @@ async function main() {
                 }
             }
         }
+        // Push updated dashboard state to connected browsers
+        sendDashboardUpdate();
         // Render consolidated dashboard to console
         console.clear();
         console.log('\x1b[35m================================================================================\x1b[0m');
